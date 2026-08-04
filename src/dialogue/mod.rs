@@ -6,6 +6,7 @@
 //! is pure: it asks a `DialogueView` about game state and returns effects for
 //! the caller to apply, so it stays headless-testable.
 
+pub mod llm;
 pub mod npc;
 
 use std::collections::{BTreeMap, BTreeSet};

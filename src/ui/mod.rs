@@ -11,11 +11,20 @@ use crate::sim::game::{Game, GameStatus};
 use crate::world::World;
 
 /// Draw the game UI and return the inputs the player chose this frame.
-pub fn game_ui(ctx: &Context, game: &mut Game, world: &World, fps: i32) -> Vec<Input> {
+/// `llm_line` is the garnish's rephrased line for the current conversation
+/// (None = the scripted line); `llm_waiting` shows the considering state.
+pub fn game_ui(
+    ctx: &Context,
+    game: &mut Game,
+    world: &World,
+    fps: i32,
+    llm_line: Option<&str>,
+    llm_waiting: bool,
+) -> Vec<Input> {
     let mut inputs = Vec::new();
     hud(ctx, game, world, fps, &mut inputs);
     settlement_panel(ctx, game, world, &mut inputs);
-    conversation_panel(ctx, game, &mut inputs);
+    conversation_panel(ctx, game, llm_line, llm_waiting, &mut inputs);
     pack_panel(ctx, game, &mut inputs);
     diary_panel(ctx, game);
     inputs
@@ -169,15 +178,27 @@ fn settlement_panel(ctx: &Context, game: &mut Game, world: &World, inputs: &mut 
 }
 
 /// The active conversation, if any. The tomb question is the runtime slot
-/// of the seeded clue graph (DESIGN.md §4.5).
-fn conversation_panel(ctx: &Context, game: &mut Game, inputs: &mut Vec<Input>) {
+/// of the seeded clue graph (DESIGN.md §4.5); with the LLM garnish on, the
+/// NPC's line is the rephrased `llm_line` (falling back to the scripted
+/// text), and "…considering" shows while the model is answering.
+fn conversation_panel(
+    ctx: &Context,
+    game: &mut Game,
+    llm_line: Option<&str>,
+    llm_waiting: bool,
+    inputs: &mut Vec<Input>,
+) {
     let Some(talk) = game.talk_screen() else {
         return;
     };
     egui::Window::new(talk.npc_name)
         .default_pos([420.0, 60.0])
         .show(ctx, |ui| {
-            ui.label(talk.text);
+            let text = llm_line.unwrap_or(talk.text.as_str());
+            ui.label(text);
+            if llm_waiting && llm_line.is_none() {
+                ui.label("…considering");
+            }
             ui.separator();
             for (index, option) in talk.options.iter().enumerate() {
                 if ui.button(option).clicked() {

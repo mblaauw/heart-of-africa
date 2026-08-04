@@ -182,6 +182,7 @@ impl Game {
             Input::Bury(id) => self.apply_bury(id),
             Input::Retrieve(id) => self.apply_retrieve(id),
             Input::Travel(route_id) => self.apply_travel(route_id, world),
+            Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
         };
         // The daily director: weather, market drift, rivals (DESIGN.md §4.8).
         if self.tick.hour_of_day() == 0 && self.status == GameStatus::Playing {
@@ -513,6 +514,58 @@ impl Game {
             ..Default::default()
         };
         self.apply_effect(&effect, npc)
+    }
+
+    /// Apply a validated LLM action (DESIGN.md §6.4). Re-validated on apply
+    /// so replaying the input log is byte-identical: the only permitted
+    /// effect is revealing the NPC's pending clue, gated exactly like the
+    /// scripted tomb question.
+    fn apply_llm_action(&mut self, npc_id: &str, effect: &Effect) -> Vec<String> {
+        let Some(clue_id) = &effect.reveal_clue else {
+            return Vec::new();
+        };
+        let Some(npc) = self.content.npcs.get(npc_id).cloned() else {
+            return Vec::new();
+        };
+        let Some(pending) = self.pending_clue_of_npc_inner(npc_id).map(|c| c.id.clone()) else {
+            return Vec::new();
+        };
+        if *clue_id != pending {
+            return Vec::new();
+        }
+        self.apply_effect(effect, &npc)
+    }
+
+    /// The LLM turn context (DESIGN.md §6.3): identity, relationship, the
+    /// scripted node, and the fact whitelist. `None` when no conversation
+    /// is active.
+    pub fn llm_context(&self) -> Option<crate::dialogue::llm::LlmContext> {
+        let conv = self.conversation.as_ref()?;
+        let npc = self.content.npcs.get(&conv.npc_id)?;
+        Some(crate::dialogue::llm::LlmContext {
+            npc_id: conv.npc_id.clone(),
+            npc_name: npc.name.clone(),
+            settlement: npc.settlement.clone(),
+            reputation: self.reputation(&npc.settlement),
+            node_text: conv.node(npc).text.clone(),
+            options: self.talk_screen().map(|t| t.options).unwrap_or_default(),
+            pending_clue: self
+                .pending_clue_of_npc_inner(&npc.id)
+                .map(|c| (c.id.clone(), c.text.clone())),
+        })
+    }
+
+    /// The validator gates at reply time: the pending clue and every clue
+    /// text (for the leak scan).
+    pub fn llm_gates(&self) -> crate::dialogue::llm::LlmGate {
+        crate::dialogue::llm::LlmGate {
+            pending_clue: self
+                .conversation
+                .as_ref()
+                .and_then(|conv| self.pending_clue_of_npc_inner(&conv.npc_id))
+                .map(|c| (c.id.clone(), c.text.clone())),
+            all_clue_texts: self.graph.clues.values().map(|c| c.text.clone()).collect(),
+        }
     }
 
     /// Apply one scripted effect — the closed action set of §6.4.

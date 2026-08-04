@@ -22,6 +22,7 @@ usage:
   hoatool gen-map <world.toml> <ascii-spec.txt> <out.png>
   hoatool gen-art <world.toml> <assets-dir> [seed]
   hoatool validate <content-dir> [assets-dir]
+  hoatool llm-demo        (needs --features llm; live garnish check)
 ";
 
 fn main() {
@@ -30,9 +31,97 @@ fn main() {
         Some("gen-map") => run_gen_map(&args[2..]),
         Some("gen-art") => run_gen_art(&args[2..]),
         Some("validate") => run_validate(&args[2..]),
+        #[cfg(feature = "llm")]
+        Some("llm-demo") => run_llm_demo(),
         _ => {
             eprintln!("{USAGE}");
             std::process::exit(2);
+        }
+    }
+}
+
+/// Live verification of the LLM garnish (DESIGN.md §6): one real request to
+/// the OpenCode API through the full validator, using the repo's content.
+/// Needs `--features llm` and `HOA_OPENCODE_API_KEY`.
+#[cfg(feature = "llm")]
+fn run_llm_demo() {
+    use heart_of_africa::content::load::{load_game_content, load_world};
+    use heart_of_africa::dialogue::llm::{self, LlmContext, LlmGate};
+    use heart_of_africa::sim::game::Game;
+
+    let config = llm::LlmConfig::load();
+    if !config.enabled {
+        eprintln!("llm-demo: config.toml has llm.enabled = false — enable it first");
+        std::process::exit(1);
+    }
+    let Some(key) = llm::LlmConfig::api_key() else {
+        eprintln!("llm-demo: HOA_OPENCODE_API_KEY is not set");
+        std::process::exit(1);
+    };
+
+    let world = match load_world(Path::new("content")) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("llm-demo: {e:#}");
+            std::process::exit(1);
+        }
+    };
+    let content = match load_game_content(Path::new("content")) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("llm-demo: {e:#}");
+            std::process::exit(1);
+        }
+    };
+    let game = Game::new(0, content, &world);
+    let npc = game
+        .content
+        .npcs
+        .get("cairo_hakim")
+        .expect("cairo NPC exists");
+    let start = game.graph.start_clue.clone();
+    let clue = game.graph.clues.get(&start).expect("start clue exists");
+    let ctx = LlmContext {
+        npc_id: npc.id.clone(),
+        npc_name: npc.name.clone(),
+        settlement: npc.settlement.clone(),
+        reputation: 5,
+        node_text: npc.opening().text.clone(),
+        options: vec!["Farewell.".to_string()],
+        pending_clue: Some((clue.id.clone(), clue.text.clone())),
+    };
+    let gates = LlmGate {
+        pending_clue: Some((clue.id.clone(), clue.text.clone())),
+        all_clue_texts: game.graph.clues.values().map(|c| c.text.clone()).collect(),
+    };
+
+    println!(
+        "llm-demo: {} via {} (timeout {}ms)...",
+        config.model, config.provider, config.timeout_ms
+    );
+    let body = llm::build_request(&config, &ctx);
+    match llm::request(&config, &key, &body) {
+        Ok(raw) => {
+            let Some(content) = llm::parse_response(&raw) else {
+                eprintln!("llm-demo: response envelope had no content (fail closed):\n{raw}");
+                std::process::exit(1);
+            };
+            match llm::validate(&content, &gates) {
+                Some(reply) => {
+                    println!("validated reply:");
+                    println!("  say: {}", reply.say);
+                    println!("  actions: {:?}", reply.actions);
+                    println!("llm-demo: OK — the garnish answers through the validator");
+                }
+                None => {
+                    eprintln!("llm-demo: reply failed validation (fail closed):\n{content}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("llm-demo: request failed: {e}");
+            std::process::exit(1);
         }
     }
 }

@@ -15,6 +15,8 @@ pub mod survival;
 
 use serde::{Deserialize, Serialize};
 
+use crate::dialogue::npc::Effect;
+
 use player::Direction;
 
 /// A player input, recorded in application order for replay (DESIGN.md §9).
@@ -41,4 +43,8 @@ pub enum Input {
     Retrieve(String),
     /// Caravan fast-travel along a scouted route (DESIGN.md §4.2).
     Travel(String),
+    /// A validated LLM action (DESIGN.md §6.4): the narration skin may emit
+    /// scripted-tree effects, recorded like any other input so replays stay
+    /// byte-identical with the LLM on (§9). Re-validated on apply.
+    LlmAction { npc_id: String, effect: Effect },
 }

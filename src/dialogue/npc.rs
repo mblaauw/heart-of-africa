@@ -107,7 +107,7 @@ impl Condition {
 }
 
 /// The closed action set (DESIGN.md §6.4), as used by scripted effects.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Effect {
     #[serde(default)]
     pub reveal_clue: Option<String>,

@@ -1,0 +1,15 @@
+# Game configuration (DESIGN.md §6.2).
+# The LLM API key comes from the HOA_OPENCODE_API_KEY environment variable
+# (~/.secrets.zsh) — never from files, and never committed.
+
+[llm]
+enabled = false            # master kill-switch; scripted dialogue when false
+provider = "opencode"
+model = "deepseek-v4-flash"
+base_url = "https://opencode.ai/zen/go/v1"
+# Tuned from the design's starting values after measuring the real API
+# (DESIGN.md §6.2): the reasoning model needs ~4.5s and ~1000-token
+# headroom for its visible JSON.
+timeout_ms = 15000
+max_output_tokens = 1000
+cache = true               # per-session response cache keyed by (npc_id, context_hash)
