@@ -1,21 +1,42 @@
-//! Content loaders: world.toml, biome map, asset manifest (DESIGN.md §7, §8.2).
+//! Content loaders: world.toml, biome map, asset manifest, game content
+//! (goods, markets, clues, NPCs) (DESIGN.md §7, §8.2).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::dialogue::npc::{Condition, DialogueOption, Effect, Node, Npc};
+use crate::sim::clues::{Clue, ClueKind, Expedition};
+use crate::sim::economy::{Category, Goods, Market, MarketEntry};
+use crate::sim::game::GameContent;
+use crate::sim::survival::Ailment;
 use crate::world::biome::{BiomeDef, BiomeGrid, parse_hex_color};
 use crate::world::{River, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
 pub const WORLD_FILE: &str = "world.toml";
 
+/// Name of the goods catalog, at the content directory root.
+pub const GOODS_FILE: &str = "goods.toml";
+
+/// Name of the market factors file, at the content directory root.
+pub const MARKETS_FILE: &str = "markets.toml";
+
+/// Name of the clue chain file, at the content directory root.
+pub const CLUES_FILE: &str = "clues.toml";
+
+/// Directory of per-NPC dialogue files, under the content directory.
+pub const NPCS_DIR: &str = "npcs";
+
 /// Name of the art manifest, at the assets directory root.
 pub const ASSETS_FILE: &str = "assets.toml";
 
 /// Current art manifest format version.
 pub const ASSETS_VERSION: u32 = 1;
+
+/// Current content format version shared by the game data files.
+pub const CONTENT_VERSION: u32 = 1;
 
 /// Current world data format version; `world.toml` must declare it.
 pub const WORLD_VERSION: u32 = 1;
@@ -205,6 +226,284 @@ pub fn load_assets(assets_dir: &Path) -> Result<AssetManifest> {
         .map(|(id, rel)| (id, assets_dir.join(rel)))
         .collect();
     Ok(AssetManifest { entries })
+}
+
+// ---------------------------------------------------------------------------
+// Game content: goods, markets, clues, NPCs
+// ---------------------------------------------------------------------------
+
+/// Load all game content (goods, markets, clues, NPCs, expedition) from the
+/// content directory. Schema errors and unresolvable references fail loudly.
+pub fn load_game_content(content_dir: &Path) -> Result<GameContent> {
+    Ok(GameContent {
+        goods: load_goods(content_dir)?,
+        markets: load_markets(content_dir)?,
+        clues: load_clues(content_dir)?,
+        npcs: load_npcs(content_dir)?,
+        expedition: load_expedition(content_dir)?,
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct GoodsFile {
+    version: u32,
+    goods: Vec<GoodsToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct GoodsToml {
+    id: String,
+    name: String,
+    category: Category,
+    base_price: u32,
+    #[serde(default)]
+    gift_value: i32,
+    #[serde(default)]
+    restores_hydration: f32,
+    #[serde(default)]
+    restores_nutrition: f32,
+    #[serde(default)]
+    cures: Option<Ailment>,
+}
+
+fn load_goods(content_dir: &Path) -> Result<BTreeMap<String, Goods>> {
+    let raw: GoodsFile = read_toml(content_dir, GOODS_FILE)?;
+    check_version(GOODS_FILE, raw.version)?;
+    let mut goods = BTreeMap::new();
+    for g in raw.goods {
+        goods.insert(
+            g.id.clone(),
+            Goods {
+                id: g.id,
+                name: g.name,
+                category: g.category,
+                base_price: g.base_price,
+                gift_value: g.gift_value,
+                restores_hydration: g.restores_hydration,
+                restores_nutrition: g.restores_nutrition,
+                cures: g.cures,
+            },
+        );
+    }
+    Ok(goods)
+}
+
+#[derive(serde::Deserialize)]
+struct MarketsFile {
+    version: u32,
+    market: Vec<MarketToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct MarketToml {
+    settlement: String,
+    #[serde(default)]
+    item: Vec<ItemFactorToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct ItemFactorToml {
+    id: String,
+    #[serde(default = "one")]
+    demand: f32,
+    #[serde(default = "one")]
+    supply: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+fn load_markets(content_dir: &Path) -> Result<BTreeMap<String, Market>> {
+    let raw: MarketsFile = read_toml(content_dir, MARKETS_FILE)?;
+    check_version(MARKETS_FILE, raw.version)?;
+    let mut markets = BTreeMap::new();
+    for m in raw.market {
+        let items = m
+            .item
+            .into_iter()
+            .map(|i| {
+                (
+                    i.id,
+                    MarketEntry {
+                        demand: i.demand,
+                        supply: i.supply,
+                    },
+                )
+            })
+            .collect();
+        markets.insert(
+            m.settlement.clone(),
+            Market {
+                settlement_id: m.settlement,
+                items,
+            },
+        );
+    }
+    Ok(markets)
+}
+
+#[derive(serde::Deserialize)]
+struct CluesFile {
+    version: u32,
+    expedition: ExpeditionToml,
+    #[serde(default)]
+    clue: Vec<ClueToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct ExpeditionToml {
+    tomb_tile: (u32, u32),
+    win_clues: usize,
+}
+
+#[derive(serde::Deserialize)]
+struct ClueToml {
+    id: String,
+    kind: ClueKind,
+    settlement: String,
+    npc: String,
+    #[serde(default)]
+    rep_gate: i32,
+    #[serde(default)]
+    prereq: Vec<String>,
+    #[serde(default)]
+    gives_item: Option<String>,
+    #[serde(default)]
+    requires_item: Option<String>,
+    text: String,
+}
+
+fn load_clues(content_dir: &Path) -> Result<BTreeMap<String, Clue>> {
+    let raw: CluesFile = read_toml(content_dir, CLUES_FILE)?;
+    check_version(CLUES_FILE, raw.version)?;
+    let mut clues = BTreeMap::new();
+    for c in raw.clue {
+        clues.insert(
+            c.id.clone(),
+            Clue {
+                id: c.id,
+                kind: c.kind,
+                settlement: c.settlement,
+                npc: c.npc,
+                rep_gate: c.rep_gate,
+                prereq: c.prereq,
+                gives_item: c.gives_item,
+                requires_item: c.requires_item,
+                text: c.text,
+            },
+        );
+    }
+    Ok(clues)
+}
+
+/// The expedition win condition; `None` until a clues file exists.
+pub fn load_expedition(content_dir: &Path) -> Result<Option<Expedition>> {
+    let raw: CluesFile = read_toml(content_dir, CLUES_FILE)?;
+    check_version(CLUES_FILE, raw.version)?;
+    Ok(Some(Expedition {
+        tomb_tile: raw.expedition.tomb_tile,
+        win_clues: raw.expedition.win_clues,
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct NpcToml {
+    id: String,
+    name: String,
+    settlement: String,
+    opening: String,
+    #[serde(default)]
+    node: Vec<NodeToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct NodeToml {
+    id: String,
+    text: String,
+    #[serde(default)]
+    option: Vec<OptionToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct OptionToml {
+    text: String,
+    #[serde(default)]
+    go_to: Option<String>,
+    /// TOML `if` is a Rust keyword; renamed.
+    #[serde(rename = "if", default)]
+    r#if: Option<Condition>,
+    #[serde(default)]
+    effect: Option<Effect>,
+}
+
+fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
+    let npcs_dir = content_dir.join(NPCS_DIR);
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(&npcs_dir)
+        .with_context(|| format!("reading {}", npcs_dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "toml"))
+        .collect();
+    entries.sort(); // deterministic load order
+
+    let mut npcs = BTreeMap::new();
+    for path in entries {
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let raw: NpcToml =
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        let nodes = raw
+            .node
+            .into_iter()
+            .map(|n| {
+                let options = n
+                    .option
+                    .into_iter()
+                    .map(|o| DialogueOption {
+                        text: o.text,
+                        go_to: o.go_to,
+                        condition: o.r#if.unwrap_or_default(),
+                        effect: o.effect.unwrap_or_default(),
+                    })
+                    .collect();
+                (
+                    n.id.clone(),
+                    Node {
+                        id: n.id,
+                        text: n.text,
+                        options,
+                    },
+                )
+            })
+            .collect();
+        npcs.insert(
+            raw.id.clone(),
+            Npc {
+                id: raw.id,
+                name: raw.name,
+                settlement: raw.settlement,
+                opening: raw.opening,
+                nodes,
+            },
+        );
+    }
+    Ok(npcs)
+}
+
+/// Read and parse a TOML file from the content directory.
+fn read_toml<T: serde::de::DeserializeOwned>(content_dir: &Path, file: &str) -> Result<T> {
+    let path = content_dir.join(file);
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    toml::from_str(&text).with_context(|| format!("parsing {file}"))
+}
+
+fn check_version(file: &str, version: u32) -> Result<()> {
+    if version != CONTENT_VERSION {
+        anyhow::bail!("{file} declares version {version}, expected {CONTENT_VERSION}");
+    }
+    Ok(())
 }
 
 /// Biome definitions must satisfy: passable biomes cost >= 1.0, impassable

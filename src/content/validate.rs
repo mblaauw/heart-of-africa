@@ -9,14 +9,24 @@ use anyhow::Result;
 
 use super::load;
 
-/// Validate all content under `content_dir`.
+/// Validate all content under `content_dir` (world + game content).
 ///
 /// Returns a list of problems; an empty list means the content is valid.
 /// Schema errors and pixel-legend mismatches fail hard (they bubble up as
 /// `Err`), while structural problems (bad IDs, off-map positions, rivers not
-/// on water) are collected and returned.
+/// on water, dangling dialogue references) are collected and returned.
 pub fn validate_content(content_dir: &Path) -> Result<Vec<String>> {
     let world = load::load_world(content_dir)?;
+    let mut problems = validate_world(&world);
+
+    let content = load::load_game_content(content_dir)?;
+    problems.extend(validate_game_content(&world, &content));
+
+    Ok(problems)
+}
+
+/// World geometry and settlement checks (map, rivers, settlements).
+fn validate_world(world: &crate::world::World) -> Vec<String> {
     let mut problems: Vec<String> = Vec::new();
 
     if world.settlements.is_empty() {
@@ -66,7 +76,209 @@ pub fn validate_content(content_dir: &Path) -> Result<Vec<String>> {
         }
     }
 
-    Ok(problems)
+    problems
+}
+
+/// Goods, markets, clues, and dialogue reference checks.
+fn validate_game_content(
+    world: &crate::world::World,
+    content: &crate::sim::game::GameContent,
+) -> Vec<String> {
+    use crate::sim::economy::Category;
+
+    let mut problems: Vec<String> = Vec::new();
+
+    // Goods: unique ids (map key), sane numbers.
+    for goods in content.goods.values() {
+        if goods.base_price == 0 {
+            problems.push(format!("goods {:?} has base_price 0", goods.id));
+        }
+        if goods.category == Category::Gift && goods.gift_value <= 0 {
+            problems.push(format!("gift goods {:?} has gift_value <= 0", goods.id));
+        }
+        if goods.restores_hydration > 100.0 || goods.restores_nutrition > 100.0 {
+            problems.push(format!(
+                "goods {:?} restores more than 100 of a stat",
+                goods.id
+            ));
+        }
+    }
+
+    // Markets: settlements and item ids resolve.
+    for market in content.markets.values() {
+        if world.settlement(&market.settlement_id).is_none() {
+            problems.push(format!(
+                "market for unknown settlement {:?}",
+                market.settlement_id
+            ));
+        }
+        for (item_id, entry) in &market.items {
+            if !content.goods.contains_key(item_id) {
+                problems.push(format!(
+                    "market {:?} lists unknown goods {item_id:?}",
+                    market.settlement_id
+                ));
+            }
+            if !(0.25..=4.0).contains(&entry.demand) || !(0.25..=4.0).contains(&entry.supply) {
+                problems.push(format!(
+                    "market {:?} item {item_id:?} has factors outside 0.25..4.0",
+                    market.settlement_id
+                ));
+            }
+        }
+    }
+
+    // Clues: everything referenced resolves; the prerequisite graph is a DAG.
+    // Items granted by clues (like the brass key) join the item universe next
+    // to the goods catalog.
+    let mut granted_items: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for clue in content.clues.values() {
+        if let Some(item) = &clue.gives_item {
+            granted_items.insert(item.clone());
+        }
+    }
+    let item_known = |id: &str| content.goods.contains_key(id) || granted_items.contains(id);
+
+    let mut clue_ids: HashSet<&str> = HashSet::new();
+    for clue in content.clues.values() {
+        if !clue_ids.insert(clue.id.as_str()) {
+            problems.push(format!("duplicate clue id {:?}", clue.id));
+        }
+        if world.settlement(&clue.settlement).is_none() {
+            problems.push(format!(
+                "clue {:?} names unknown settlement {:?}",
+                clue.id, clue.settlement
+            ));
+        }
+        if let Some(npc) = content.npcs.get(&clue.npc) {
+            if npc.settlement != clue.settlement {
+                problems.push(format!(
+                    "clue {:?}: NPC {:?} lives in {:?}, not {:?}",
+                    clue.id, clue.npc, npc.settlement, clue.settlement
+                ));
+            }
+        } else {
+            problems.push(format!(
+                "clue {:?} names unknown NPC {:?}",
+                clue.id, clue.npc
+            ));
+        }
+        if clue.rep_gate < 0 {
+            problems.push(format!("clue {:?} has negative rep_gate", clue.id));
+        }
+        for prereq in &clue.prereq {
+            if !content.clues.contains_key(prereq) {
+                problems.push(format!(
+                    "clue {:?} prereq {prereq:?} does not exist",
+                    clue.id
+                ));
+            }
+        }
+        for item in clue.gives_item.iter().chain(clue.requires_item.iter()) {
+            if !item_known(item) {
+                problems.push(format!(
+                    "clue {:?} references unknown goods {item:?}",
+                    clue.id
+                ));
+            }
+        }
+    }
+
+    // Prerequisite graph must be acyclic: walk every chain, bounded by the
+    // number of clues (a cycle would revisit and overflow the bound).
+    for clue in content.clues.values() {
+        let mut stack: Vec<&str> = vec![clue.id.as_str()];
+        let mut steps = 0;
+        while let Some(id) = stack.pop() {
+            steps += 1;
+            if steps > content.clues.len() * 2 {
+                problems.push(format!("clue {id:?} prerequisite cycle detected"));
+                break;
+            }
+            if let Some(c) = content.clues.get(id) {
+                stack.extend(c.prereq.iter().map(String::as_str));
+            }
+        }
+    }
+
+    if let Some(exp) = &content.expedition {
+        let (tx, ty) = exp.tomb_tile;
+        if !world.grid.in_bounds(tx, ty) {
+            problems.push(format!("tomb tile ({tx},{ty}) is outside the map"));
+        } else if !world.grid.passable_at(tx, ty) {
+            problems.push(format!("tomb tile ({tx},{ty}) is impassable"));
+        }
+        if exp.win_clues == 0 || exp.win_clues > content.clues.len() {
+            problems.push(format!(
+                "win_clues {} must be within 1..={}",
+                exp.win_clues,
+                content.clues.len()
+            ));
+        }
+    }
+
+    // NPCs: opening node, option targets, item/clue references resolve.
+    for npc in content.npcs.values() {
+        if world.settlement(&npc.settlement).is_none() {
+            problems.push(format!(
+                "NPC {:?} lives in unknown settlement {:?}",
+                npc.id, npc.settlement
+            ));
+        }
+        if !npc.nodes.contains_key(&npc.opening) {
+            problems.push(format!(
+                "NPC {:?} opening node {:?} does not exist",
+                npc.id, npc.opening
+            ));
+        }
+        for node in npc.nodes.values() {
+            for option in &node.options {
+                if let Some(go_to) = &option.go_to
+                    && !npc.nodes.contains_key(go_to)
+                {
+                    problems.push(format!(
+                        "NPC {:?} node {:?} option {:?} targets missing node {go_to:?}",
+                        npc.id, node.id, option.text
+                    ));
+                }
+                if let Some(item) = &option.condition.has_item
+                    && !item_known(item)
+                {
+                    problems.push(format!(
+                        "NPC {:?} node {:?} condition item {item:?} does not exist",
+                        npc.id, node.id
+                    ));
+                }
+                if let Some(clue) = &option.condition.has_clue
+                    && !content.clues.contains_key(clue)
+                {
+                    problems.push(format!(
+                        "NPC {:?} node {:?} condition clue {clue:?} does not exist",
+                        npc.id, node.id
+                    ));
+                }
+                let effect = &option.effect;
+                for item in effect.take_item.iter().chain(effect.give_item.iter()) {
+                    if !item_known(item) {
+                        problems.push(format!(
+                            "NPC {:?} node {:?} effect item {item:?} does not exist",
+                            npc.id, node.id
+                        ));
+                    }
+                }
+                if let Some(clue) = &effect.reveal_clue
+                    && !content.clues.contains_key(clue)
+                {
+                    problems.push(format!(
+                        "NPC {:?} node {:?} reveals unknown clue {clue:?}",
+                        npc.id, node.id
+                    ));
+                }
+            }
+        }
+    }
+
+    problems
 }
 
 /// Validate the art manifest (DESIGN.md §5).

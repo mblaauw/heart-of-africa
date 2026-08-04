@@ -1,0 +1,77 @@
+# Goods catalog (DESIGN.md §4.4). base_price is in piastres; the market
+# price is base × season × local demand/supply × reputation modifier.
+# A typo here fails `cargo test` (content lint).
+
+version = 1
+
+[[goods]]
+id = "water"
+name = "Water"
+category = "supply"
+base_price = 10
+restores_hydration = 25
+
+[[goods]]
+id = "boiled_water"
+name = "Boiled water"
+category = "supply"
+base_price = 25
+restores_hydration = 25
+
+[[goods]]
+id = "food"
+name = "Dried food"
+category = "supply"
+base_price = 15
+restores_nutrition = 30
+
+[[goods]]
+id = "quinine"
+name = "Quinine"
+category = "supply"
+base_price = 60
+cures = "malaria"
+
+[[goods]]
+id = "tent"
+name = "Tent"
+category = "gear"
+base_price = 50
+
+[[goods]]
+id = "coffee"
+name = "Coffee"
+category = "gift"
+base_price = 20
+gift_value = 3
+
+[[goods]]
+id = "beads"
+name = "Trade beads"
+category = "gift"
+base_price = 30
+gift_value = 5
+
+[[goods]]
+id = "dates"
+name = "Dates"
+category = "trade"
+base_price = 15
+
+[[goods]]
+id = "salt"
+name = "Salt"
+category = "trade"
+base_price = 20
+
+[[goods]]
+id = "gold_dust"
+name = "Gold dust"
+category = "trade"
+base_price = 100
+
+[[goods]]
+id = "cloth"
+name = "Cloth"
+category = "trade"
+base_price = 40

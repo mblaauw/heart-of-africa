@@ -46,6 +46,12 @@ impl Tick {
         self.0 / Self::HOURS_PER_DAY + 1
     }
 
+    /// In-game month, 1–12 (30 days per month, no year rollover for the
+    /// expedition's timescale).
+    pub fn month(self) -> u32 {
+        ((self.day() - 1) / 30 + 1) as u32
+    }
+
     /// Hour of day, 0..24, with 0 = midnight.
     pub fn hour_of_day(self) -> u64 {
         self.0 % Self::HOURS_PER_DAY
@@ -101,6 +107,14 @@ mod tests {
     fn hour_of_day_wraps() {
         assert_eq!(Tick::from_hours(24).hour_of_day(), 0);
         assert_eq!(Tick::from_hours(30).hour_of_day(), 6);
+    }
+
+    #[test]
+    fn month_derivation() {
+        assert_eq!(Tick::START.month(), 1);
+        assert_eq!(Tick::from_hours(24 * 29).month(), 1); // day 30
+        assert_eq!(Tick::from_hours(24 * 30).month(), 2); // day 31
+        assert_eq!(Tick::from_hours(24 * 270).month(), 10);
     }
 
     #[test]

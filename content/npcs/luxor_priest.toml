@@ -1,0 +1,28 @@
+# Luxor's clue-holding NPC: minimal tree for the chain (§10.2).
+
+id = "luxor_priest"
+name = "Priest Ankhmose"
+settlement = "luxor"
+opening = "greet"
+
+[[node]]
+id = "greet"
+text = "A priest of the temple at Luxor watches the river. 'The temples remember everything, if you know how to ask.'"
+
+[[node.option]]
+text = "A sheikh of Asyut sends this key to you."
+if = { has_clue = "nile.c1", has_item = "brass_key" }
+effect = { reveal_clue = "nile.c3" }
+go_to = "key_read"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "key_read"
+text = "He turns the key slowly, and his eyes narrow. 'So it begins again. The tomb is not by the river — the old kings did not trust the water. Seek the guide at Aswan; he knows the eastern hills.'"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }

@@ -1,0 +1,61 @@
+# Aswan's clue-holding NPC: minimal tree for the chain (§10.2).
+# His knowledge is reputation-gated: he must trust you before he speaks.
+
+id = "aswan_guide"
+name = "Guide Idris"
+settlement = "aswan"
+opening = "greet"
+
+[[node]]
+id = "greet"
+text = "Guide Idris sits by the landing, mending a rope. 'The road south ends here, but the desert has its own roads.'"
+
+[[node.option]]
+text = "The priest of Luxor said you know the eastern hills."
+if = { rep_ge = 10, has_clue = "nile.c3" }
+effect = { reveal_clue = "nile.c4" }
+go_to = "tomb_told"
+
+[[node.option]]
+text = "Give trade beads as a gift."
+if = { has_item = "beads" }
+effect = { take_item = "beads", rep_delta = 5 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "tomb_told"
+text = "'The priest speaks true. A day's march past the eastern quarries, the hills split open — a cleft in the red rock. They say a king sleeps under it. Go when the sun is low; the heat there is a killing thing.'"
+
+[[node.option]]
+text = "Give trade beads as a gift."
+if = { has_item = "beads" }
+effect = { take_item = "beads", rep_delta = 5 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "gift_ack"
+text = "'Beads from the coast — you honor the old ways. A man who gives is a man who can be trusted.'"
+
+[[node.option]]
+text = "The priest of Luxor said you know the eastern hills."
+if = { rep_ge = 10, has_clue = "nile.c3" }
+effect = { reveal_clue = "nile.c4" }
+go_to = "tomb_told"
+
+[[node.option]]
+text = "Give trade beads as a gift."
+if = { has_item = "beads" }
+effect = { take_item = "beads", rep_delta = 5 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }

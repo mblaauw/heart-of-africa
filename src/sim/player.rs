@@ -4,6 +4,8 @@
 //! The visited list is the fog-of-war record: unique tiles in first-visit
 //! order, deterministic by construction.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::world::biome::BiomeGrid;
@@ -53,15 +55,22 @@ pub struct Player {
     y: u32,
     /// Tiles visited so far, unique, in first-visit order (fog of war).
     visited: Vec<(u32, u32)>,
+    /// Money in piastres.
+    money: u32,
+    /// Carried items by goods ID.
+    items: BTreeMap<String, u32>,
 }
 
 impl Player {
-    /// A player standing at `(x, y)`; the start tile counts as visited.
+    /// A player standing at `(x, y)` with no money and an empty pack;
+    /// the start tile counts as visited.
     pub fn new(x: u32, y: u32) -> Self {
         Player {
             x,
             y,
             visited: vec![(x, y)],
+            money: 0,
+            items: BTreeMap::new(),
         }
     }
 
@@ -76,6 +85,54 @@ impl Player {
 
     pub fn has_visited(&self, x: u32, y: u32) -> bool {
         self.visited.contains(&(x, y))
+    }
+
+    pub fn money(&self) -> u32 {
+        self.money
+    }
+
+    pub fn add_money(&mut self, amount: u32) {
+        self.money = self.money.saturating_add(amount);
+    }
+
+    /// Spend `price` piastres; returns false (and changes nothing) when the
+    /// purse is too light.
+    pub fn spend(&mut self, price: u32) -> bool {
+        if self.money < price {
+            return false;
+        }
+        self.money -= price;
+        true
+    }
+
+    /// Units of a carried item by goods ID.
+    pub fn item_count(&self, id: &str) -> u32 {
+        self.items.get(id).copied().unwrap_or(0)
+    }
+
+    /// The whole pack: goods ID -> count.
+    pub fn items(&self) -> &BTreeMap<String, u32> {
+        &self.items
+    }
+
+    /// Add one unit of an item.
+    pub fn add_item(&mut self, id: &str) {
+        *self.items.entry(id.to_string()).or_insert(0) += 1;
+    }
+
+    /// Remove one unit of an item; false when not carried.
+    pub fn remove_item(&mut self, id: &str) -> bool {
+        let Some(count) = self.items.get_mut(id) else {
+            return false;
+        };
+        if *count == 0 {
+            return false;
+        }
+        *count -= 1;
+        if *count == 0 {
+            self.items.remove(id);
+        }
+        true
     }
 
     /// Try to move one tile in `dir`. Returns `None` (and changes nothing)

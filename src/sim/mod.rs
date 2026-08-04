@@ -5,7 +5,11 @@
 //! (seed, player inputs up to T) — no wall-clock time, no unseeded randomness.
 
 pub mod clock;
+pub mod clues;
+pub mod economy;
+pub mod game;
 pub mod player;
+pub mod survival;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +18,23 @@ use player::Direction;
 /// A player input, recorded in application order for replay (DESIGN.md §9).
 /// Replays must be byte-identical: a save plus its input log is the whole
 /// game history.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Input {
+    /// Walk one tile in a cardinal direction (1 tick = 1 hour).
     Move(Direction),
+    /// Rest for one hour.
+    Rest,
+    /// Buy one unit of a good at the current settlement's market.
+    Buy(String),
+    /// Sell one unit of a good at the current settlement's market.
+    Sell(String),
+    /// Use one unit of a carried good (drink, eat, take quinine).
+    Use(String),
+    /// Speak with an NPC: `(npc_id, option_index)` where `option_index` is
+    /// among the *currently visible* options (0 = first visible).
+    Talk(String, usize),
+    /// Bury one unit of a good at the current tile (DESIGN.md §4.10).
+    Bury(String),
+    /// Retrieve one unit of a good from a cache at the current tile.
+    Retrieve(String),
 }

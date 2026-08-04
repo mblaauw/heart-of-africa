@@ -8,6 +8,7 @@
 //! - `save/` snapshots/restores game state as JSON, fully reproducible.
 
 pub mod content;
+pub mod dialogue;
 pub mod save;
 pub mod sim;
 pub mod world;

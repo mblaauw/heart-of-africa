@@ -1,0 +1,47 @@
+# The deterministic clue chain of the vertical slice (DESIGN.md §4.5).
+# One complete chain for the mini-run: hint → key → corroboration → location.
+# A full seeded clue-graph generator replaces this in Phase 3.
+
+version = 1
+
+[expedition]
+tomb_tile = [20, 26]
+win_clues = 4
+
+[[clue]]
+id = "nile.c1"
+kind = "hint"
+settlement = "cairo"
+npc = "cairo_hakim"
+rep_gate = 5
+prereq = []
+text = "The trail leads south to Asyut: the sheikh there keeps an old brass key that unlocks what lies beyond."
+
+[[clue]]
+id = "nile.c2"
+kind = "key"
+settlement = "asyut"
+npc = "asyut_sheikh"
+rep_gate = 0
+prereq = ["nile.c1"]
+gives_item = "brass_key"
+text = "The sheikh presses a heavy brass key into your hand: 'For the priest of Luxor. He knows what it opens.'"
+
+[[clue]]
+id = "nile.c3"
+kind = "corroboration"
+settlement = "luxor"
+npc = "luxor_priest"
+rep_gate = 0
+prereq = ["nile.c1"]
+requires_item = "brass_key"
+text = "The priest turns the key, nods, and speaks of the lost tomb: 'It is not by the river. Seek the guide at Aswan; he knows the hills.'"
+
+[[clue]]
+id = "nile.c4"
+kind = "location"
+settlement = "aswan"
+npc = "aswan_guide"
+rep_gate = 10
+prereq = ["nile.c3"]
+text = "The guide draws in the sand: a cleft in the eastern hills, a day's march past the quarries. 'There, under the red rock.'"

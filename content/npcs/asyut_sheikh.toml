@@ -1,0 +1,28 @@
+# Asyut's clue-holding NPC: minimal tree for the chain (§10.2).
+
+id = "asyut_sheikh"
+name = "Sheikh Yusuf"
+settlement = "asyut"
+opening = "greet"
+
+[[node]]
+id = "greet"
+text = "The sheikh of Asyut studies you from his carpet. 'Travelers pass through on their way to somewhere else. What is it you carry, that you stop here?'"
+
+[[node.option]]
+text = "I come from Hakim Ahmed of Cairo, seeking a brass key."
+if = { has_clue = "nile.c1" }
+effect = { reveal_clue = "nile.c2" }
+go_to = "key_given"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "key_given"
+text = "'The old scholar still breathes, then. Good.' He draws a heavy brass key from his sash. 'For the priest of Luxor — he knows what it opens. Tell him the key has found its way home.'"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }

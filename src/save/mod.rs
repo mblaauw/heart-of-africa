@@ -1,28 +1,40 @@
 //! Save/load: serde_json snapshots (DESIGN.md §4.10, §8.2).
 //!
-//! A save contains the world seed, the clock, the player, and the ordered
+//! A save contains the world seed, the full game state, and the ordered
 //! input log, so a save is fully reproducible and replayable.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::sim::Input;
 use crate::sim::clock::Tick;
+use crate::sim::game::{Cache, GameStatus};
 use crate::sim::player::Player;
+use crate::sim::survival::Survival;
 
 /// A complete, reproducible snapshot of a run (DESIGN.md §4.10).
 ///
 /// Invariant: replaying `input_log` from `(seed, tick 0)` reproduces this
 /// exact state; `state_hash` is a pure function of the serialized content,
 /// so equal hashes mean identical runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Save {
     /// World generation seed. Consumed by worldgen in Phase 3; recorded from
     /// Phase 1 for replay compatibility.
     pub seed: u64,
     pub tick: Tick,
     pub player: Player,
+    pub survival: Survival,
+    /// Settlement ID -> reputation.
+    pub reputation: BTreeMap<String, i32>,
+    /// Obtained clue IDs.
+    pub clues: BTreeSet<String>,
+    pub caches: Vec<Cache>,
+    /// Tomb tile once the location clue names it.
+    pub tomb_revealed: Option<(u32, u32)>,
+    pub status: GameStatus,
     /// Ordered player inputs, in application order (the replay log).
     pub input_log: Vec<Input>,
 }
@@ -71,6 +83,12 @@ mod tests {
             seed: 42,
             tick: Tick::from_hours(7),
             player: Player::new(15, 8),
+            survival: Survival::new(),
+            reputation: BTreeMap::new(),
+            clues: BTreeSet::new(),
+            caches: Vec::new(),
+            tomb_revealed: None,
+            status: GameStatus::Playing,
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],
         }
     }
