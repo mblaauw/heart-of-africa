@@ -6,16 +6,11 @@ name = "Priest Ankhmose"
 settlement = "luxor"
 opening = "greet"
 tomb_answer = "tomb_answer"
+gift = { item = "coffee", rep_delta = 3 }
 
 [[node]]
 id = "greet"
 text = "A priest of the temple at Luxor watches the river. 'The temples remember everything, if you know how to ask.'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
@@ -26,24 +21,12 @@ id = "tomb_answer"
 text = "He listens, and his eyes narrow. 'So it begins again. The temples have not forgotten — and now neither will you.'"
 
 [[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "gift_ack"
 text = "'Coffee — a thoughtful gift. You are remembered kindly, stranger.'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

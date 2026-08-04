@@ -18,6 +18,15 @@ pub enum NodeId {
     Named(String),
 }
 
+/// The gift this NPC accepts (DESIGN.md §4.5): the loader injects a gift
+/// option into every node, so NPC data files never repeat the block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Gift {
+    pub item: String,
+    /// Reputation gained per gift.
+    pub rep_delta: i32,
+}
+
 /// One named NPC: identity card + a scripted dialogue tree (DESIGN.md §4.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Npc {
@@ -31,6 +40,8 @@ pub struct Npc {
     /// the seeded clue graph decides what the NPC reveals). Empty = this NPC
     /// never gets a tomb question.
     pub tomb_answer: String,
+    /// The gift this NPC accepts; the loader injects the option everywhere.
+    pub gift: Option<Gift>,
     /// All named nodes, by ID.
     pub nodes: BTreeMap<String, Node>,
 }

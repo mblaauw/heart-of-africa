@@ -6,16 +6,11 @@ name = "Malam Idris"
 settlement = "zinder"
 opening = "greet"
 tomb_answer = "tomb_answer"
+gift = { item = "beads", rep_delta = 5 }
 
 [[node]]
 id = "greet"
 text = "Malam Idris, scribe of the court at Zinder, unrolls a sheet of marks and letters. 'The caravans bring news from the north. Sit — the harmattan has made even the goats slow.'"
-
-[[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
@@ -26,24 +21,12 @@ id = "gift_ack"
 text = "'Beads for the court — you know the customs of the road. You are welcome here.'"
 
 [[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "tomb_answer"
 text = "He sets down his reed. 'The tomb you seek is a matter spoken of only in riddles. But riddles have answers, and I will give you yours.'"
-
-[[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

@@ -6,16 +6,11 @@ name = "Sheikhah Fatima"
 settlement = "dakhla"
 opening = "greet"
 tomb_answer = "tomb_answer"
+gift = { item = "beads", rep_delta = 5 }
 
 [[node]]
 id = "greet"
 text = "Sheikhah Fatima of the Dakhla traders looks up from her ledgers. 'The caravans pay me in salt and stories. What do you carry that I should hear it?'"
-
-[[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
@@ -26,24 +21,12 @@ id = "gift_ack"
 text = "'Beads from the coast — the old trade. You are a person of sense, stranger.'"
 
 [[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "tomb_answer"
 text = "She closes the ledger. 'What was buried is a guarded subject. But you have earned the telling — hear it, and mark it well.'"
-
-[[node.option]]
-text = "Give trade beads as a gift."
-if = { has_item = "beads" }
-effect = { take_item = "beads", rep_delta = 5 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

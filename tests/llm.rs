@@ -34,7 +34,7 @@ fn talk(game: &mut Game, world: &World, npc_id: &str, fragment: &str) {
 }
 
 fn gift(game: &mut Game, world: &World, npc_id: &str) {
-    talk(game, world, npc_id, "Give coffee as a gift.");
+    talk(game, world, npc_id, "gift");
 }
 
 /// The context whitelists exactly the pending clue: never the start clue

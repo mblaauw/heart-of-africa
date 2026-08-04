@@ -22,6 +22,7 @@ usage:
   hoatool gen-map <world.toml> <ascii-spec.txt> <out.png>
   hoatool gen-art <world.toml> <assets-dir> [seed]
   hoatool validate <content-dir> [assets-dir]
+  hoatool new-npc <content-dir> <id> <name> <settlement> [--gift coffee|beads]
   hoatool llm-demo        (needs --features llm; live garnish check)
 ";
 
@@ -31,6 +32,7 @@ fn main() {
         Some("gen-map") => run_gen_map(&args[2..]),
         Some("gen-art") => run_gen_art(&args[2..]),
         Some("validate") => run_validate(&args[2..]),
+        Some("new-npc") => run_new_npc(&args[2..]),
         #[cfg(feature = "llm")]
         Some("llm-demo") => run_llm_demo(),
         _ => {
@@ -38,6 +40,110 @@ fn main() {
             std::process::exit(2);
         }
     }
+}
+
+/// Scaffold a new named NPC from the standard template: a complete dialogue
+/// tree (greet / gift_ack / tomb_answer), the synthesized `gift` field, and
+/// the farewell option — so future content follows the template instead of
+/// copy-paste.
+fn run_new_npc(args: &[String]) {
+    let (content_dir, id, name, settlement) = match args.first() {
+        Some(dir) => {
+            let id = args.get(1).map(String::as_str).unwrap_or("");
+            let name = args.get(2).map(String::as_str).unwrap_or("");
+            let settlement = args.get(3).map(String::as_str).unwrap_or("");
+            if id.is_empty() || name.is_empty() || settlement.is_empty() {
+                eprintln!("{USAGE}");
+                std::process::exit(2);
+            }
+            (dir, id, name, settlement)
+        }
+        None => {
+            eprintln!("{USAGE}");
+            std::process::exit(2);
+        }
+    };
+    let gift = match args.iter().position(|a| a == "--gift") {
+        Some(i) => args.get(i + 1).map(String::as_str).unwrap_or("coffee"),
+        None => "coffee",
+    };
+    if let Err(e) = new_npc(Path::new(content_dir), id, name, settlement, gift) {
+        eprintln!("hoatool new-npc: error: {e:#}");
+        std::process::exit(1);
+    }
+    println!("new-npc: wrote content/npcs/{id}.toml");
+}
+
+fn new_npc(content_dir: &Path, id: &str, name: &str, settlement: &str, gift: &str) -> Result<()> {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        bail!("NPC id must be lowercase letters, digits, or underscores");
+    }
+    let world = heart_of_africa::content::load::load_world(content_dir)
+        .context("loading world (for settlement check)")?;
+    if world.settlement(settlement).is_none() {
+        bail!("settlement {settlement:?} is not in world.toml");
+    }
+    let content = heart_of_africa::content::load::load_game_content(content_dir)
+        .context("loading game content (for gift check)")?;
+    if !content.goods.contains_key(gift) {
+        bail!("gift item {gift:?} is not a good");
+    }
+    let rep_delta = if gift == "beads" { 5 } else { 3 };
+    let settlement_name = world
+        .settlement(settlement)
+        .map(|s| s.name.as_str())
+        .unwrap_or(settlement);
+
+    let out = content_dir.join("npcs").join(format!("{id}.toml"));
+    if out.exists() {
+        bail!("{} already exists", out.display());
+    }
+    let text = format!(
+        "# {settlement}'s named NPC. The tomb question is a runtime slot filled\n\
+         # by the seeded clue graph.\n\
+         \n\
+         id = \"{id}\"\n\
+         name = \"{name}\"\n\
+         settlement = \"{settlement}\"\n\
+         opening = \"greet\"\n\
+         tomb_answer = \"tomb_answer\"\n\
+         gift = {{ item = \"{gift}\", rep_delta = {rep_delta} }}\n\
+         \n\
+         [[node]]\n\
+         id = \"greet\"\n\
+         text = \"{name} studies the traveler with patient eyes. 'A traveler here — what brings you to {settlement_name}?'\"\n\
+         \n\
+         [[node.option]]\n\
+         text = \"Farewell.\"\n\
+         effect = {{ end = true }}\n\
+         \n\
+         [[node]]\n\
+         id = \"gift_ack\"\n\
+         text = \"'A thoughtful gift. You are remembered kindly.'\"\n\
+         \n\
+         [[node.option]]\n\
+         text = \"Farewell.\"\n\
+         effect = {{ end = true }}\n\
+         \n\
+         [[node]]\n\
+         id = \"tomb_answer\"\n\
+         text = \"{name} nods slowly. 'The old kings are a guarded subject. But you have earned the telling — hear it, and mark it well.'\"\n\
+         \n\
+         [[node.option]]\n\
+         text = \"Farewell.\"\n\
+         effect = {{ end = true }}\n",
+        settlement = settlement,
+        id = id,
+        name = name,
+        gift = gift,
+        rep_delta = rep_delta,
+        settlement_name = settlement_name,
+    );
+    std::fs::write(&out, text).with_context(|| format!("writing {}", out.display()))?;
+    Ok(())
 }
 
 /// Live verification of the LLM garnish (DESIGN.md §6): one real request to

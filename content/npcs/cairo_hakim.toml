@@ -7,6 +7,7 @@ name = "Hakim Ahmed"
 settlement = "cairo"
 opening = "greet"
 tomb_answer = "tomb_answer"
+gift = { item = "coffee", rep_delta = 3 }
 
 [[node]]
 id = "greet"
@@ -17,24 +18,12 @@ text = "Who are you?"
 go_to = "intro"
 
 [[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "intro"
 text = "'I am Hakim Ahmed, scholar of the old kings. The Ottoman records and the French diggers both pass through my hands. If you seek the ancients, you have come to the right city.'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
@@ -45,24 +34,12 @@ id = "gift_ack"
 text = "'You are generous — and generosity is remembered in Cairo.'"
 
 [[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "tomb_answer"
 text = "He lowers his voice, glancing at the doorway. 'The old kings are a guarded subject. But you speak with respect — so listen.'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

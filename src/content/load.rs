@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::dialogue::npc::{Condition, DialogueOption, Effect, Node, Npc};
+use crate::dialogue::npc::{Condition, DialogueOption, Effect, Gift, Node, Npc};
 use crate::sim::clues::{ClueKind, ClueTemplate, GeneratorConfig, GeneratorInput};
 use crate::sim::economy::{Category, Goods, Market, MarketEntry};
 use crate::sim::game::GameContent;
@@ -263,7 +263,7 @@ pub fn load_game_content(content_dir: &Path) -> Result<GameContent> {
     Ok(GameContent {
         goods: goods.clone(),
         markets: load_markets(content_dir)?,
-        npcs: load_npcs(content_dir)?,
+        npcs: load_npcs(content_dir, &goods)?,
         generator: load_generator_input(content_dir, &goods)?,
     })
 }
@@ -446,7 +446,24 @@ struct NpcToml {
     #[serde(default)]
     tomb_answer: String,
     #[serde(default)]
+    gift: Option<Gift>,
+    #[serde(default)]
     node: Vec<NodeToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct GiftToml {
+    item: String,
+    rep_delta: i32,
+}
+
+impl From<GiftToml> for Gift {
+    fn from(g: GiftToml) -> Self {
+        Gift {
+            item: g.item,
+            rep_delta: g.rep_delta,
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -469,7 +486,7 @@ struct OptionToml {
     effect: Option<Effect>,
 }
 
-fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
+fn load_npcs(content_dir: &Path, goods: &BTreeMap<String, Goods>) -> Result<BTreeMap<String, Npc>> {
     let npcs_dir = content_dir.join(NPCS_DIR);
     let mut entries: Vec<PathBuf> = std::fs::read_dir(&npcs_dir)
         .with_context(|| format!("reading {}", npcs_dir.display()))?
@@ -485,7 +502,7 @@ fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
             .with_context(|| format!("reading {}", path.display()))?;
         let raw: NpcToml =
             toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-        let nodes = raw
+        let mut nodes: BTreeMap<String, Node> = raw
             .node
             .into_iter()
             .map(|n| {
@@ -509,6 +526,32 @@ fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
                 )
             })
             .collect();
+
+        // Gift synthesis: the accepted gift becomes an option in every node
+        // (data files never repeat the block; §4.5).
+        let gift = raw.gift;
+        if let Some(gift) = &gift {
+            let goods = goods.get(&gift.item).ok_or_else(|| {
+                anyhow::anyhow!("NPC {:?} gift item {:?} is not a good", raw.id, gift.item)
+            })?;
+            let option = DialogueOption {
+                text: format!("Give {} as a gift.", goods.name),
+                go_to: Some("gift_ack".to_string()),
+                condition: Condition {
+                    has_item: Some(gift.item.clone()),
+                    ..Default::default()
+                },
+                effect: Effect {
+                    take_item: Some(gift.item.clone()),
+                    rep_delta: Some(gift.rep_delta),
+                    ..Default::default()
+                },
+            };
+            for node in nodes.values_mut() {
+                node.options.push(option.clone());
+            }
+        }
+
         npcs.insert(
             raw.id.clone(),
             Npc {
@@ -517,6 +560,7 @@ fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
                 settlement: raw.settlement,
                 opening: raw.opening,
                 tomb_answer: raw.tomb_answer,
+                gift,
                 nodes,
             },
         );

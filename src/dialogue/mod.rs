@@ -159,6 +159,7 @@ mod tests {
             settlement: "cairo".into(),
             opening: "greet".into(),
             tomb_answer: "intro".into(),
+            gift: None,
             nodes: std::collections::BTreeMap::from([
                 (
                     "greet".into(),

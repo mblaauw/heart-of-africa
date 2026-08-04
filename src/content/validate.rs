@@ -225,6 +225,26 @@ fn validate_game_content(
                 npc.id, npc.tomb_answer
             ));
         }
+        if let Some(gift) = &npc.gift {
+            if !content.goods.contains_key(&gift.item) {
+                problems.push(format!(
+                    "NPC {:?} gift item {:?} is not a good",
+                    npc.id, gift.item
+                ));
+            }
+            if !npc.nodes.contains_key("gift_ack") {
+                problems.push(format!(
+                    "NPC {:?} accepts gifts but has no gift_ack node",
+                    npc.id
+                ));
+            }
+            if gift.rep_delta <= 0 {
+                problems.push(format!(
+                    "NPC {:?} gift rep_delta must be positive, got {}",
+                    npc.id, gift.rep_delta
+                ));
+            }
+        }
         for node in npc.nodes.values() {
             for option in &node.options {
                 if let Some(go_to) = &option.go_to

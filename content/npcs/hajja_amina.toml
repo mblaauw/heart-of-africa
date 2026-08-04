@@ -6,16 +6,11 @@ name = "Hajja Amina"
 settlement = "kano"
 opening = "greet"
 tomb_answer = "tomb_answer"
+gift = { item = "coffee", rep_delta = 3 }
 
 [[node]]
 id = "greet"
 text = "Hajja Amina, merchant of Kano, weighs a bag of gold dust on her palm. 'The Sokoto roads bring everything: cloth, salt, rumors. Which of these are you buying?'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
@@ -26,24 +21,12 @@ id = "gift_ack"
 text = "'Coffee, and good coffee at that. A merchant knows her guests.'"
 
 [[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
-
-[[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
 id = "tomb_answer"
 text = "She sets the scale down. 'Rumors of old kings reach even Kano. What I know, I will sell for nothing and give for trust. Hear me.'"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

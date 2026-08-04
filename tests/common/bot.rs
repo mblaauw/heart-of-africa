@@ -122,7 +122,7 @@ fn next_clue_id(game: &Game) -> Option<String> {
 }
 
 /// Open (or continue) a conversation and gift the NPC its accepted gift:
-/// use the visible gift option, or buy the gift the NPC's options mention.
+/// use the visible gift option, or buy the gift from the NPC's `gift` field.
 fn gift_input(game: &mut Game, npc_id: &str) -> Option<Input> {
     if game
         .conversation
@@ -135,23 +135,10 @@ fn gift_input(game: &mut Game, npc_id: &str) -> Option<Input> {
     if let Some(index) = talk.options.iter().position(|o| o.contains("gift")) {
         return Some(Input::Talk(talk.npc_id.clone(), index));
     }
-    // No visible gift option: find what this NPC accepts, buy it.
-    let npc = game.content.npcs.get(npc_id)?;
-    let mentions = |needle: &str| {
-        npc.nodes
-            .values()
-            .flat_map(|n| &n.options)
-            .any(|o| o.text.contains(needle))
-    };
-    let item = if mentions("coffee") {
-        "coffee"
-    } else if mentions("beads") {
-        "beads"
-    } else {
-        return None;
-    };
-    if game.player.item_count(item) == 0 {
-        return Some(Input::Buy(item.to_string()));
+    // No visible gift option: buy the gift this NPC accepts.
+    let item = game.content.npcs.get(npc_id)?.gift.as_ref()?.item.clone();
+    if game.player.item_count(&item) == 0 {
+        return Some(Input::Buy(item));
     }
     // Carrying the gift but the option is hidden — leave the talk.
     Some(Input::Talk(
