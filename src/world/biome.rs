@@ -8,16 +8,19 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow, bail};
 
-/// A biome definition: passability and per-tile movement cost.
+/// A biome definition: passability, per-tile movement cost, and map color.
 ///
 /// Invariant: `movement_cost` is `0.0` exactly when `passable` is `false`
-/// (water). Passable biomes always cost at least `1.0`.
+/// (water). Passable biomes always cost at least `1.0`. The color is the
+/// legend color of this biome on the biome PNG.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BiomeDef {
     pub id: String,
     pub passable: bool,
     /// Cost of entering one tile of this biome; 1.0 = desert baseline.
     pub movement_cost: f32,
+    /// RGB color of this biome on the biome map.
+    pub color: (u8, u8, u8),
 }
 
 /// The tile grid of a region: per-tile indices into a small biome table.
@@ -132,7 +135,7 @@ impl BiomeGrid {
 }
 
 /// Parse `"3a6ea5"` or `"#3A6EA5"` into `(r, g, b)`.
-fn parse_hex_color(hex: &str) -> Result<(u8, u8, u8)> {
+pub fn parse_hex_color(hex: &str) -> Result<(u8, u8, u8)> {
     let hex = hex.trim().trim_start_matches('#');
     if hex.len() != 6 {
         bail!("color must be 6 hex digits, got {hex:?}");
@@ -161,6 +164,7 @@ mod tests {
                     id: "water".into(),
                     passable: false,
                     movement_cost: 0.0,
+                    color: (0x3a, 0x6e, 0xa5),
                 },
             ),
             (
@@ -169,6 +173,7 @@ mod tests {
                     id: "desert".into(),
                     passable: true,
                     movement_cost: 1.0,
+                    color: (0xd9, 0xb3, 0x6c),
                 },
             ),
             (
@@ -177,6 +182,7 @@ mod tests {
                     id: "floodplain".into(),
                     passable: true,
                     movement_cost: 1.5,
+                    color: (0x8f, 0xae, 0x5c),
                 },
             ),
         ])

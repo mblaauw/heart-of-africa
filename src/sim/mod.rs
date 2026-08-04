@@ -6,3 +6,15 @@
 
 pub mod clock;
 pub mod player;
+
+use serde::{Deserialize, Serialize};
+
+use player::Direction;
+
+/// A player input, recorded in application order for replay (DESIGN.md §9).
+/// Replays must be byte-identical: a save plus its input log is the whole
+/// game history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Input {
+    Move(Direction),
+}

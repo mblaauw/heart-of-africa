@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::world::biome::{BiomeDef, BiomeGrid};
+use crate::world::biome::{BiomeDef, BiomeGrid, parse_hex_color};
 use crate::world::{River, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
@@ -83,6 +83,13 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         );
     }
 
+    // Legend colors: normalized hex -> biome ID. Inverted into biome -> RGB
+    // so every BiomeDef carries its map color (used by the renderer).
+    let mut color_of: BTreeMap<String, (u8, u8, u8)> = BTreeMap::new();
+    for (hex, id) in &raw.map.legend {
+        color_of.insert(id.clone(), parse_hex_color(hex)?);
+    }
+
     let biome_defs: BTreeMap<String, BiomeDef> = raw
         .biome
         .iter()
@@ -91,6 +98,9 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
                 id: id.clone(),
                 passable: b.passable,
                 movement_cost: b.movement_cost,
+                color: *color_of
+                    .get(id)
+                    .ok_or_else(|| anyhow::anyhow!("biome {id:?} has no legend color"))?,
             };
             validate_biome(&def)?;
             Ok((id.clone(), def))
@@ -171,6 +181,7 @@ mod tests {
             id: "desert".into(),
             passable: true,
             movement_cost: 1.0,
+            color: (0xd9, 0xb3, 0x6c),
         };
         assert!(validate_biome(&ok).is_ok());
 
@@ -178,6 +189,7 @@ mod tests {
             id: "water".into(),
             passable: false,
             movement_cost: 5.0,
+            color: (0x3a, 0x6e, 0xa5),
         };
         assert!(validate_biome(&bad).is_err());
 
@@ -185,6 +197,7 @@ mod tests {
             id: "desert".into(),
             passable: true,
             movement_cost: 0.5,
+            color: (0xd9, 0xb3, 0x6c),
         };
         assert!(validate_biome(&bad).is_err());
     }

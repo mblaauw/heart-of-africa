@@ -103,6 +103,7 @@ mod tests {
                     id: "water".into(),
                     passable: false,
                     movement_cost: 0.0,
+                    color: (0x3a, 0x6e, 0xa5),
                 },
             ),
             (
@@ -111,6 +112,7 @@ mod tests {
                     id: "desert".into(),
                     passable: true,
                     movement_cost: 1.0,
+                    color: (0xd9, 0xb3, 0x6c),
                 },
             ),
             (
@@ -119,6 +121,7 @@ mod tests {
                     id: "floodplain".into(),
                     passable: true,
                     movement_cost: 1.5,
+                    color: (0x8f, 0xae, 0x5c),
                 },
             ),
         ]);

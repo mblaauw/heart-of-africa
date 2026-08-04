@@ -93,16 +93,7 @@ fn biome_colors(world_toml: &Path) -> Result<BTreeMap<String, (u8, u8, u8)>> {
     raw.map
         .legend
         .into_iter()
-        .map(|(hex, id)| {
-            let hex = hex.trim().trim_start_matches('#');
-            if hex.len() != 6 {
-                bail!("legend color {hex:?} must be 6 hex digits");
-            }
-            let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| anyhow!("bad color {hex:?}"))?;
-            let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| anyhow!("bad color {hex:?}"))?;
-            let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| anyhow!("bad color {hex:?}"))?;
-            Ok((id, (r, g, b)))
-        })
+        .map(|(hex, id)| Ok((id, heart_of_africa::world::biome::parse_hex_color(&hex)?)))
         .collect()
 }
 
