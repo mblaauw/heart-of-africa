@@ -295,7 +295,8 @@ fn validate_game_content(
 /// Validate the art manifest (DESIGN.md §5).
 ///
 /// Manifest schema errors fail hard; any file that EXISTS must load as an
-/// image. Missing files are allowed by design — placeholder art covers them.
+/// image (or, for `.wav`, carry a valid RIFF/WAVE header). Missing files are
+/// allowed by design — placeholder art covers them.
 pub fn validate_assets(assets_dir: &Path) -> Result<Vec<String>> {
     let manifest = load::load_assets(assets_dir)?;
     let mut problems: Vec<String> = Vec::new();
@@ -303,12 +304,31 @@ pub fn validate_assets(assets_dir: &Path) -> Result<Vec<String>> {
         if !path.exists() {
             continue; // optional by design; placeholder art replaces it
         }
-        if let Err(e) = image::open(path) {
+        let is_wav = path.extension().is_some_and(|ext| ext == "wav");
+        let ok = if is_wav {
+            wav_ok(path)
+        } else {
+            image::open(path).is_ok()
+        };
+        if !ok {
             problems.push(format!(
-                "asset {id:?} at {} is not a loadable image: {e}",
-                path.display()
+                "asset {id:?} at {} is not a loadable image{}/wav",
+                path.display(),
+                if is_wav { " or" } else { "" }
             ));
         }
     }
     Ok(problems)
+}
+
+/// A minimal RIFF/WAVE header check for PCM WAV files.
+fn wav_ok(path: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    bytes.len() >= 44
+        && &bytes[0..4] == b"RIFF"
+        && &bytes[8..12] == b"WAVE"
+        && &bytes[12..16] == b"fmt "
+        && &bytes[36..40] == b"data"
 }

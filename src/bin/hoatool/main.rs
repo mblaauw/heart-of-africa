@@ -4,18 +4,23 @@
 //! - `gen-map <world.toml> <ascii-spec.txt> <out.png>` — render an ASCII
 //!   biome map into the biome PNG. The ASCII file is the diffable source of
 //!   truth; the PNG is derived data.
+//! - `gen-art <world.toml> <assets-dir> [seed]` — generate the procedural
+//!   style-bible tileset, marker art, and ambient audio (deterministic).
 //! - `validate <content-dir>` — run content lint (same checks as `cargo test`).
+
+mod art;
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 
 const USAGE: &str = "\
 hoatool — Heart of Africa dev tool
 
 usage:
   hoatool gen-map <world.toml> <ascii-spec.txt> <out.png>
+  hoatool gen-art <world.toml> <assets-dir> [seed]
   hoatool validate <content-dir> [assets-dir]
 ";
 
@@ -23,12 +28,28 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("gen-map") => run_gen_map(&args[2..]),
+        Some("gen-art") => run_gen_art(&args[2..]),
         Some("validate") => run_validate(&args[2..]),
         _ => {
             eprintln!("{USAGE}");
             std::process::exit(2);
         }
     }
+}
+
+fn run_gen_art(args: &[String]) {
+    if !(2..=3).contains(&args.len()) {
+        eprintln!("{USAGE}");
+        std::process::exit(2);
+    }
+    let world_toml = &args[0];
+    let assets_dir = &args[1];
+    let seed: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+    if let Err(e) = art::generate(Path::new(world_toml), Path::new(assets_dir), seed) {
+        eprintln!("hoatool gen-art: error: {e:#}");
+        std::process::exit(1);
+    }
+    println!("gen-art: wrote tileset, markers, and ambient audio into {assets_dir} (seed {seed})");
 }
 
 fn run_gen_map(args: &[String]) {

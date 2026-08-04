@@ -1,10 +1,15 @@
 # Content-ID-addressed art manifest (DESIGN.md §5).
 # All entries are OPTIONAL: a missing or unloadable file falls back to
 # placeholder art (tinted shape + label), so the game always runs regardless
-# of art coverage. Drop real PNGs in here later phases.
+# of art coverage. The procedural assets are generated deterministically by:
+#   hoatool gen-art content/world.toml assets
+# and are committed as canonical output (docs/STYLE_BIBLE.md).
 
 version = 1
 
 [assets]
+"tile.biome" = "art/biome_tiles.png"
 "marker.player" = "art/player_marker.png"
 "marker.settlement" = "art/settlement_marker.png"
+"marker.tomb" = "art/tomb_marker.png"
+"audio.ambient" = "audio/wind.wav"
