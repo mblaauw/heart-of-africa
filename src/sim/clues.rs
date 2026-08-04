@@ -64,12 +64,11 @@ pub struct Clue {
     pub contradicts_herring: Option<String>,
 }
 
-/// The expedition's win condition: the tomb tile and the graph geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The expedition's win condition: the tomb tile. The corroboration
+/// requirement is structural — `ClueGraph::win_condition_met`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Expedition {
     pub tomb_tile: (u32, u32),
-    /// Corroborations required to identify the tomb.
-    pub win_clues: usize,
 }
 
 /// A generated mystery: the clue nodes plus the win condition.
@@ -374,10 +373,7 @@ impl<'a> ClueGenerator<'a> {
         let tomb_tile = self.pick_tomb();
         let graph = ClueGraph {
             clues,
-            expedition: Expedition {
-                tomb_tile,
-                win_clues: 4,
-            },
+            expedition: Expedition { tomb_tile },
             leg_a: vec![
                 start_clue.clone(),
                 "e1".into(),

@@ -26,6 +26,26 @@ pub trait DialogueView {
     fn has_clue(&self, clue_id: &str) -> bool;
 }
 
+/// The single visibility rule: conditions hold, and the option does not
+/// re-reveal an already-obtained clue. Shared by `visible_options` and
+/// `choose` so the two can never drift apart.
+fn filtered_options<'a>(
+    node: &'a npc::Node,
+    settlement: &str,
+    view: &dyn DialogueView,
+) -> Vec<&'a DialogueOption> {
+    node.options
+        .iter()
+        .filter(|o| o.condition.is_met(settlement, view))
+        .filter(|o| {
+            o.effect
+                .reveal_clue
+                .as_ref()
+                .is_none_or(|id| !view.has_clue(id))
+        })
+        .collect()
+}
+
 /// An owned snapshot of the game state a dialogue needs. The caller builds
 /// it so the runner never borrows the game while it mutates the conversation.
 #[derive(Debug, Clone, Default)]
@@ -90,17 +110,7 @@ impl Conversation {
         npc: &'a Npc,
         view: &dyn DialogueView,
     ) -> Vec<&'a DialogueOption> {
-        self.node(npc)
-            .options
-            .iter()
-            .filter(|o| o.condition.is_met(&npc.settlement, view))
-            .filter(|o| {
-                o.effect
-                    .reveal_clue
-                    .as_ref()
-                    .is_none_or(|id| !view.has_clue(id))
-            })
-            .collect()
+        filtered_options(self.node(npc), &npc.settlement, view)
     }
 
     /// Jump to a named node (used for the runtime tomb answer).
@@ -126,17 +136,7 @@ impl Conversation {
                 .node(id.as_str())
                 .expect("conversation node always exists"),
         };
-        let visible: Vec<&npc::DialogueOption> = node
-            .options
-            .iter()
-            .filter(|o| o.condition.is_met(&npc.settlement, view))
-            .filter(|o| {
-                o.effect
-                    .reveal_clue
-                    .as_ref()
-                    .is_none_or(|id| !view.has_clue(id))
-            })
-            .collect();
+        let visible = filtered_options(node, &npc.settlement, view);
         let chosen = (*visible.get(index)?).clone();
         match &chosen.go_to {
             Some(id) => self.node = NodeId::Named(id.clone()),

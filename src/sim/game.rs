@@ -11,12 +11,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::dialogue::Conversation;
 use crate::dialogue::npc::{Effect, Npc};
-use crate::dialogue::{Conversation, GameSnapshot};
 use crate::save::Save;
 use crate::sim::Input;
 use crate::sim::clock::Tick;
-use crate::sim::clues::{Clue, ClueGenerator, ClueGraph, ClueKind, GeneratorInput};
+use crate::sim::clues::{ClueGenerator, ClueGraph, ClueKind, GeneratorInput};
 use crate::sim::economy::{Goods, Market, MarketEntry, season_factor};
 use crate::sim::events;
 use crate::sim::player::{Direction, Player};
@@ -226,37 +226,6 @@ impl Game {
         self.reputation.get(settlement).copied().unwrap_or(0)
     }
 
-    /// The current conversation turn, or None.
-    pub fn talk_screen(&self) -> Option<TalkScreen> {
-        let conv = self.conversation.as_ref()?;
-        let npc = self.content.npcs.get(&conv.npc_id)?;
-        let snapshot = self.snapshot_view();
-        let options = conv
-            .visible_options(npc, &snapshot)
-            .iter()
-            .map(|o| o.text.clone())
-            .collect();
-        Some(TalkScreen {
-            npc_id: conv.npc_id.clone(),
-            npc_name: npc.name.clone(),
-            text: conv.node(npc).text.clone(),
-            options,
-            tomb_question: self.tomb_question_available(npc),
-        })
-    }
-
-    /// The NPCs present at the current settlement, for the UI.
-    pub fn npcs_here<'a>(&'a self, world: &'a World) -> Vec<&'a Npc> {
-        let Some(settlement) = self.settlement_at(world) else {
-            return Vec::new();
-        };
-        self.content
-            .npcs
-            .values()
-            .filter(|npc| npc.settlement == settlement.id)
-            .collect()
-    }
-
     /// Routes that can be ridden from the current settlement (scouted and
     /// reachable), for the UI.
     pub fn routes_here<'a>(&'a self, world: &'a World) -> Vec<&'a crate::world::Route> {
@@ -306,7 +275,7 @@ impl Game {
     }
 
     /// Shared post-movement bookkeeping: death and win checks.
-    fn after_movement(&mut self) {
+    pub(crate) fn after_movement(&mut self) {
         if let Some(reason) = self.survival.cause_of_death() {
             self.die(reason);
         } else {
@@ -378,14 +347,23 @@ impl Game {
     }
 
     fn apply_use(&mut self, id: &str, world: &World) -> Vec<String> {
-        if !self.player.remove_item(id) {
-            return Vec::new();
-        }
         // Cloned: goods data is small, and the item effect may trigger a
         // mutable borrow of self afterwards.
         let Some(goods) = self.content.goods(id).cloned() else {
             return Vec::new();
         };
+        // Only consumables are consumed: using a clue item (or any good
+        // without an effect) is a no-op, so the pack can't be wasted
+        // through the sim path (the UI already hides the button).
+        if goods.restores_hydration <= 0.0
+            && goods.restores_nutrition <= 0.0
+            && goods.cures.is_none()
+        {
+            return Vec::new();
+        }
+        if !self.player.remove_item(id) {
+            return Vec::new();
+        }
         let (x, y) = self.player.pos();
         let biome = world.grid.biome_id_at(x, y);
         if goods.restores_hydration > 0.0 {
@@ -409,113 +387,6 @@ impl Game {
         vec![format!("Used 1 {}.", goods.name)]
     }
 
-    fn apply_talk(&mut self, npc_id: &str, option_index: usize, world: &World) -> Vec<String> {
-        let Some(npc) = self.content.npcs.get(npc_id).cloned() else {
-            return Vec::new();
-        };
-        // Conversations happen in the NPC's settlement.
-        if self.settlement_at(world).map(|s| s.id.as_str()) != Some(npc.settlement.as_str()) {
-            return Vec::new();
-        }
-        let mut events = Vec::new();
-
-        // First word (or switching NPCs) opens the conversation.
-        if self
-            .conversation
-            .as_ref()
-            .is_none_or(|c| c.npc_id != npc_id)
-        {
-            self.conversation = Some(Conversation::start(npc_id.to_string()));
-            let conv = self.conversation.as_ref().expect("just started");
-            events.push(format!("{}: {}", npc.name, conv.node(&npc).text));
-            return events;
-        }
-
-        let authored = self
-            .conversation
-            .as_ref()
-            .expect("conversation exists")
-            .visible_options(&npc, &self.snapshot_view())
-            .len();
-
-        if option_index == authored {
-            // The runtime tomb question (last option).
-            if !self.tomb_question_available(&npc) {
-                return Vec::new();
-            }
-            events.extend(self.ask_tomb(&npc));
-            if !npc.tomb_answer.is_empty() {
-                self.conversation
-                    .as_mut()
-                    .expect("conversation exists")
-                    .jump_to(npc.tomb_answer.clone());
-                let conv = self.conversation.as_ref().expect("just moved");
-                events.push(format!("{}: {}", npc.name, conv.node(&npc).text));
-            } else {
-                self.conversation = None;
-            }
-            return events;
-        }
-
-        // An authored option.
-        let (effect, ended) = {
-            let snapshot = self.snapshot_view();
-            let conv = self.conversation.as_mut().expect("conversation exists");
-            match conv.choose(&npc, &snapshot, option_index) {
-                Some(option) => (option.effect, conv.ended()),
-                None => return Vec::new(),
-            }
-        };
-        events.extend(self.apply_effect(&effect, &npc));
-        if ended {
-            self.conversation = None;
-        } else {
-            let conv = self.conversation.as_ref().expect("not ended");
-            events.push(format!("{}: {}", npc.name, conv.node(&npc).text));
-        }
-        events
-    }
-
-    /// Whether the runtime "ask about the tomb" question is available from
-    /// this NPC: they hold a graph clue that is not yet obtained, not taken
-    /// by a rival, with prerequisites and reputation met.
-    fn tomb_question_available(&self, npc: &Npc) -> bool {
-        self.pending_clue_of_npc_inner(&npc.id).is_some()
-    }
-
-    /// The clue this NPC can currently reveal. An NPC may hold several clues
-    /// (e.g. a herring next to a real one); the first askable one in id
-    /// order wins: not obtained, not consumed by a rival, prerequisites and
-    /// rep gate met.
-    fn pending_clue_of_npc_inner(&self, npc_id: &str) -> Option<&Clue> {
-        self.graph
-            .clues
-            .values()
-            .filter(|c| c.npc == npc_id)
-            .find(|c| {
-                !self.clues.contains(&c.id)
-                    && !self.rivals_consumed.contains(&c.id)
-                    && self.graph.prereqs_met(&c.id, &self.clues)
-                    && self.reputation(&c.settlement) >= c.rep_gate
-            })
-    }
-
-    /// Ask about the tomb: reveal the NPC's pending clue (the one runtime
-    /// action the seeded graph controls).
-    fn ask_tomb(&mut self, npc: &Npc) -> Vec<String> {
-        let Some(clue_id) = self
-            .pending_clue_of_npc_inner(&npc.id)
-            .map(|c| c.id.clone())
-        else {
-            return Vec::new();
-        };
-        let effect = Effect {
-            reveal_clue: Some(clue_id),
-            ..Default::default()
-        };
-        self.apply_effect(&effect, npc)
-    }
-
     /// Apply a validated LLM action (DESIGN.md §6.4). Re-validated on apply
     /// so replaying the input log is byte-identical: the only permitted
     /// effect is revealing the NPC's pending clue, gated exactly like the
@@ -536,40 +407,8 @@ impl Game {
         self.apply_effect(effect, &npc)
     }
 
-    /// The LLM turn context (DESIGN.md §6.3): identity, relationship, the
-    /// scripted node, and the fact whitelist. `None` when no conversation
-    /// is active.
-    pub fn llm_context(&self) -> Option<crate::dialogue::llm::LlmContext> {
-        let conv = self.conversation.as_ref()?;
-        let npc = self.content.npcs.get(&conv.npc_id)?;
-        Some(crate::dialogue::llm::LlmContext {
-            npc_id: conv.npc_id.clone(),
-            npc_name: npc.name.clone(),
-            settlement: npc.settlement.clone(),
-            reputation: self.reputation(&npc.settlement),
-            node_text: conv.node(npc).text.clone(),
-            options: self.talk_screen().map(|t| t.options).unwrap_or_default(),
-            pending_clue: self
-                .pending_clue_of_npc_inner(&npc.id)
-                .map(|c| (c.id.clone(), c.text.clone())),
-        })
-    }
-
-    /// The validator gates at reply time: the pending clue and every clue
-    /// text (for the leak scan).
-    pub fn llm_gates(&self) -> crate::dialogue::llm::LlmGate {
-        crate::dialogue::llm::LlmGate {
-            pending_clue: self
-                .conversation
-                .as_ref()
-                .and_then(|conv| self.pending_clue_of_npc_inner(&conv.npc_id))
-                .map(|c| (c.id.clone(), c.text.clone())),
-            all_clue_texts: self.graph.clues.values().map(|c| c.text.clone()).collect(),
-        }
-    }
-
     /// Apply one scripted effect — the closed action set of §6.4.
-    fn apply_effect(&mut self, effect: &Effect, npc: &Npc) -> Vec<String> {
+    pub(crate) fn apply_effect(&mut self, effect: &Effect, npc: &Npc) -> Vec<String> {
         let mut events = Vec::new();
         if let Some(clue_id) = &effect.reveal_clue
             && let Some(clue) = self.graph.clues.get(clue_id)
@@ -655,77 +494,6 @@ impl Game {
         vec![format!("Recovered 1 {name} from the cache.")]
     }
 
-    /// Caravan fast-travel (DESIGN.md §4.2): time + supply cost; encounter
-    /// roll only on routes flagged risky (telegraphed before departure).
-    fn apply_travel(&mut self, route_id: &str, world: &World) -> Vec<String> {
-        let Some(route) = world.routes.iter().find(|r| r.id == route_id) else {
-            return Vec::new();
-        };
-        let Some(settlement) = self.settlement_at(world) else {
-            return Vec::new();
-        };
-        let (from_id, to_id) = if route.from == settlement.id {
-            (route.from.as_str(), route.to.as_str())
-        } else if route.to == settlement.id {
-            (route.to.as_str(), route.from.as_str())
-        } else {
-            return Vec::new();
-        };
-        if !self.route_scouted(route, world) {
-            return Vec::new();
-        }
-        let to = world.settlement(to_id).expect("validated route endpoint");
-        let from = world.settlement(from_id).expect("validated route endpoint");
-        let hours = (from.x.abs_diff(to.x) + from.y.abs_diff(to.y)) * 2;
-
-        self.tick.advance_by(hours as u64);
-        self.survival.hydration = (self.survival.hydration - hours as f32 * 0.1).max(0.0);
-        self.survival.nutrition = (self.survival.nutrition - hours as f32 * 0.1).max(0.0);
-        self.player.mark_visited(to.x, to.y);
-        self.player.teleport(to.x, to.y);
-
-        let mut events = vec![format!(
-            "Caravan to {} — {} hours on the road.",
-            to.name, hours
-        )];
-        if route.risky && events::encounter(self.seed, self.tick.as_hours()) {
-            events.push(self.ambush());
-        }
-        self.after_movement();
-        events
-    }
-
-    /// A telegraphed risky-route encounter: lose some supplies or money.
-    fn ambush(&mut self) -> String {
-        // Lose the first carried item, else some money.
-        let victim = self.player.items().keys().next().cloned();
-        if let Some(id) = victim {
-            self.player.remove_item(&id);
-            let name = self
-                .content
-                .goods(&id)
-                .map_or(id.clone(), |g| g.name.clone());
-            format!("Waylaid on the road — the bandits took your {name}.")
-        } else {
-            let loss = 10;
-            self.player.spend(loss);
-            format!("Waylaid on the road — the bandits took {loss} piastres.")
-        }
-    }
-
-    /// A route is scouted when both endpoint settlements have been visited.
-    fn route_scouted(&self, route: &crate::world::Route, world: &World) -> bool {
-        let Some(from) = world.settlement(&route.from) else {
-            return false;
-        };
-        let Some(to) = world.settlement(&route.to) else {
-            return false;
-        };
-        self.player.has_visited(from.x, from.y) && self.player.has_visited(to.x, to.y)
-    }
-
-    /// The daily director: rivals move and consume exclusives (DESIGN.md
-    /// §4.8). Weather and market drift are pure functions of (seed, day).
     fn daily(&mut self) -> Vec<String> {
         let day = self.tick.day();
         let mut events = Vec::new();
@@ -810,20 +578,6 @@ impl Game {
                     .to_string(),
             });
         }
-    }
-
-    /// An owned view of the game state for the dialogue runner.
-    fn snapshot_view(&self) -> GameSnapshot {
-        GameSnapshot {
-            reputation: self.reputation.clone(),
-            items: self.player.items().clone(),
-            clues: self.clues.clone(),
-        }
-    }
-
-    /// The clue currently obtainable at an NPC, for the bot/UI.
-    pub fn pending_clue_of_npc(&self, npc_id: &str) -> Option<&Clue> {
-        self.pending_clue_of_npc_inner(npc_id)
     }
 }
 

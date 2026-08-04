@@ -13,6 +13,9 @@ pub mod player;
 pub mod rivals;
 pub mod survival;
 
+mod talk;
+mod travel;
+
 use serde::{Deserialize, Serialize};
 
 use crate::dialogue::npc::Effect;

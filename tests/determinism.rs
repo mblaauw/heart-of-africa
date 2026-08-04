@@ -74,3 +74,23 @@ fn save_round_trip_via_json_keeps_state_hash() {
     let back = from_json(&to_json(&save).unwrap()).unwrap();
     assert_eq!(back.state_hash(), save.state_hash());
 }
+
+/// Using a non-consumable (a clue item) is a no-op: the pack can't be
+/// wasted through the sim path.
+#[test]
+fn using_a_clue_item_does_not_consume_it() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    let mut game = fresh_game(7, &world);
+    game.player.add_item("brass_key");
+    assert_eq!(game.player.item_count("brass_key"), 1);
+
+    let events = game.apply(&Input::Use("brass_key".to_string()), &world);
+    assert!(events.is_empty(), "non-consumable use must be a no-op");
+    assert_eq!(game.player.item_count("brass_key"), 1, "the key survives");
+
+    // Consumables still work.
+    game.player.add_item("water");
+    let events = game.apply(&Input::Use("water".to_string()), &world);
+    assert_eq!(events.len(), 1);
+    assert_eq!(game.player.item_count("water"), 0);
+}

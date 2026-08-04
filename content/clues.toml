@@ -8,8 +8,6 @@ version = 1
 [expedition]
 # Candidate tomb tiles across both regions; the generator picks one per seed.
 tomb_candidates = [[20, 26], [24, 21], [17, 12], [34, 58], [24, 40], [8, 48], [38, 44]]
-# Corroborations needed to identify the tomb (the generator's shortest leg).
-win_clues = 4
 
 [generator]
 # Settlements the generator distributes the clue graph across: Lower Egypt

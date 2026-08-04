@@ -66,18 +66,6 @@ fn hud(ctx: &Context, game: &Game, world: &World, fps: i32, inputs: &mut Vec<Inp
                 ui.label(format!("Standing in {}: {}", settlement.name, rep));
             }
             ui.label(format!("Clues: {}", game.clues.len()));
-            match &game.status {
-                GameStatus::Playing => {}
-                GameStatus::Won => {
-                    ui.colored_label(egui::Color32::from_rgb(200, 170, 40), "THE TOMB IS FOUND");
-                }
-                GameStatus::Dead(reason) => {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(200, 60, 40),
-                        format!("The expedition {reason}."),
-                    );
-                }
-            }
             if ui.button("Rest (R)").clicked() {
                 inputs.push(Input::Rest);
             }

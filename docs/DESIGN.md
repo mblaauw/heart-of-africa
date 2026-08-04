@@ -110,7 +110,7 @@ Bury-and-retrieve caching kept as-is. Saves are plain JSON files, save-anywhere,
 
 ## 5. Art & Content Pipeline
 
-- **Style bible first** (one page: palette, era mood — muted painterly, period-illustration feel) so AI-generated assets across sessions read as one game.
+- **Style bible first** (one page: palette, era mood — muted painterly, period-illustration feel) so AI-generated assets across sessions read as one game. (v1 uses `hoatool gen-art`: a seeded procedural tileset/markers/wind loop that satisfies the same content-ID pipeline; the bible's rules govern any later painted or AI art.)
 - **Content-ID-addressed assets**: every tile/sprite/portrait resolved via an `assets.toml` manifest (e.g. `npc.portrait.emir_of_kano = "portraits/emir_of_kano.png"`). Placeholder art (tinted shapes + label) auto-generates for any missing ID, so the game *always runs* regardless of art coverage.
 - **`hoatool` preprocessing**: normalize raw AI images into atlases (crop/pad, background removal, optional palette quantization), plus manifest and content validation.
 - **Animation minimal**: 2–4 frame cycles. Early art budget goes to biome tiles and NPC portraits (highest narrative payoff).
@@ -133,10 +133,15 @@ Bury-and-retrieve caching kept as-is. Saves are plain JSON files, save-anywhere,
 enabled = false            # master kill-switch; scripted dialogue when false
 provider = "opencode"
 model = "deepseek-v4-flash"
-timeout_ms = 6000
-max_output_tokens = 300
+base_url = "https://opencode.ai/zen/go/v1"
+timeout_ms = 15000
+max_output_tokens = 1000
 cache = true                # per-session response cache keyed by (npc_id, context_hash)
 ```
+
+*Measured tuning (2026): `deepseek-v4-flash` is a reasoning model — its visible
+JSON arrives in `choices[0].message.content` and needs ~1000-token headroom;
+observed latency ~4.5s. The 6s/300-token starting values truncated replies.*
 
 ### 6.3 Request context (assembled fresh per turn, bounded)
 - NPC identity card (≤ ~150 words), current relationship tier, mood flags.
@@ -220,12 +225,11 @@ heart-of-africa/
 | UI panels | `egui` + `egui-macroquad` | diary/inventory/trade/dialogue + debug tools |
 | Serialization | `serde`, `serde_json`, `toml` | ubiquitous |
 | RNG | `rand`, `rand_chacha` | one named seeded stream per subsystem (worldgen, weather, events, rivals) — subsystems can't perturb each other's sequences |
-| Noise | `noise` | weather fields, terrain detail |
-| Image decode | `image` | biome-map PNG, `hoatool` preprocessing |
+| Image decode | `image` | biome-map PNG, `hoatool` art generation |
 | HTTP (optional feature `llm`) | `ureq` | blocking client on a background thread; **no tokio, no async** |
-| Error handling | `anyhow` (bins) / `thiserror` (lib types) | standard pattern agents know cold |
+| Error handling | `anyhow` | bins and loaders; this repo has no custom error types |
 
-Deliberately absent: ECS (`hecs` — plain `Vec<Npc>` + ids until pain is demonstrated), a Tiled dependency, RON, async runtimes, a `pathfinding` crate (hand-rolled A* is fully visible and a pattern agents implement reliably), audio middleware (only if layered ambience is ever actually wanted).
+Deliberately absent: ECS (`hecs` — plain `Vec<Npc>` + ids until pain is demonstrated), a Tiled dependency, RON, async runtimes, a `pathfinding` crate (hand-rolled A* is fully visible and a pattern agents implement reliably), audio middleware (only if layered ambience is ever actually wanted), `noise` (weather and tile texture use hand-rolled deterministic hashing), `thiserror` (no custom error types).
 
 ### 8.5 Platforms
 Native desktop primary; WASM build kept green from day one (near-free with Macroquad, great for sharing prototypes). The `llm` cargo feature is desktop-only initially.
@@ -250,7 +254,7 @@ Native desktop primary; WASM build kept green from day one (near-free with Macro
 3. **Living world.** Event director, weather/disease per season, market drift, 2 rival explorers, seeded clue-graph generator + solvability check, caravan fast-travel. *Done when: three seeds produce visibly different but always-winnable runs; sim bot completes 100 seeds without softlocks.*
 4. **Region 2 — Sahara/Sahel corridor.** Content-only addition proving the "regions are data" claim. *Done when: region 2 lands with zero changes under `src/` (loader/lint fixes excepted).*
 5. **LLM garnish (optional, feature-flagged).** `dialogue/llm.rs`, OpenCode/deepseek-v4-flash client, validator, cache, kill-switch. *Done when: all adversarial validator tests pass; a full run with `enabled=false` and one with the key unset mid-session are indistinguishable from scripted play; no state divergence in replay with LLM on.*
-6. **Art, audio & polish.** Style-bible AI art swapped in by content ID, ambient audio, historical-accuracy review pass per region, UX polish. Post-v1: regions 3–5 as data.
+6. **Art, audio & polish.** Style-bible art (procedural via `hoatool gen-art`) swapped in by content ID, ambient audio, historical-accuracy review pass per region, UX polish. Post-v1: regions 3–5 as data.
 
 ---
 
@@ -284,4 +288,4 @@ Native desktop primary; WASM build kept green from day one (near-free with Macro
 
 ---
 
-*Note on tuning: the LLM timeout (6s) and output cap (300 tokens) in §6.2 are starting values — adjust once real `deepseek-v4-flash` latency through OpenCode is measured.*
+*Note on tuning: the LLM timeout and output cap in §6.2 are measured values (see the note there).*

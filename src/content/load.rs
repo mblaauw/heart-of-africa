@@ -379,8 +379,6 @@ struct CluesFile {
 #[derive(serde::Deserialize)]
 struct ExpeditionToml {
     tomb_candidates: Vec<(u32, u32)>,
-    #[allow(dead_code)]
-    win_clues: usize,
 }
 
 #[derive(serde::Deserialize)]

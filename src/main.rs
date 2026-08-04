@@ -31,6 +31,9 @@ struct LlmSession {
     line: Option<String>,
     /// The context key the current `line` belongs to.
     line_key: Option<String>,
+    /// Turn keys that failed closed: no re-request until the turn changes
+    /// (a failed reply must not retry every frame).
+    silenced: Option<String>,
 }
 
 impl LlmSession {
@@ -41,6 +44,7 @@ impl LlmSession {
             pending: None,
             line: None,
             line_key: None,
+            silenced: None,
         }
     }
 
@@ -54,18 +58,26 @@ impl LlmSession {
             self.pending = None;
             self.line = None;
             self.line_key = None;
+            self.silenced = None;
             return;
         };
         let key = ctx.key();
 
-        // A new turn: drop the previous line and any stale request.
+        // A new turn: drop the previous line, any stale request, and the
+        // previous turn's silencing.
         if self.line_key.as_deref() != Some(key.as_str()) {
             self.line = None;
             self.line_key = Some(key.clone());
+            self.silenced = None;
         }
 
         // The line for this turn is already in hand.
         if self.line.is_some() {
+            return;
+        }
+
+        // A turn that already failed closed stays scripted — no re-request.
+        if self.silenced.as_deref() == Some(key.as_str()) {
             return;
         }
 
@@ -76,24 +88,38 @@ impl LlmSession {
                     let reply = llm::parse_response(&raw)
                         .and_then(|content| llm::validate(&content, &game.llm_gates()));
                     self.cache.store(key.clone(), reply.clone());
-                    if let Some(reply) = reply {
-                        self.apply_reply(reply, &ctx, inputs);
+                    match reply {
+                        Some(reply) => self.apply_reply(reply, &ctx, inputs),
+                        None => self.silenced = Some(key.clone()), // fail closed, terminal
                     }
                     self.pending = None;
                 }
-                Ok(Err(_)) => self.pending = None, // fail closed
+                Ok(Err(_)) => {
+                    self.pending = None;
+                    self.silenced = Some(key.clone()); // fail closed, terminal
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.pending = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.pending = None;
+                    self.silenced = Some(key.clone());
+                }
             }
             return;
         }
 
         // Serve from the session cache, or dispatch a request.
-        if self.config.cache
-            && let Some(reply) = self.cache.lookup(&key).flatten()
-        {
-            self.apply_reply(reply, &ctx, inputs);
-            return;
+        if self.config.cache {
+            match self.cache.lookup(&key) {
+                Some(Some(reply)) => {
+                    self.apply_reply(reply, &ctx, inputs);
+                    return;
+                }
+                Some(None) => {
+                    self.silenced = Some(key); // cached failure stays silent
+                    return;
+                }
+                None => {}
+            }
         }
         let body = llm::build_request(&self.config, &ctx);
         let rx = llm::spawn_request(self.config.clone(), key.clone(), body);
