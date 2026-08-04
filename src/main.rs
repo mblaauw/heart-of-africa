@@ -1,18 +1,19 @@
 //! Game binary: init, main loop, mode switching (DESIGN.md §8.2).
 //!
-//! Phase 2 scope: walk the map, talk, trade, survive, and solve the clue
-//! chain of the vertical slice. All inputs flow through `Game::apply` and
-//! the replay log, exactly like the headless tests.
+//! All inputs flow through `Game::apply` and the replay log, exactly like
+//! the headless tests. Rendering, audio, and UI are skins over the sim.
 
 use std::path::Path;
 
 use macroquad::prelude::*;
 
+use heart_of_africa::audio::Ambient;
 use heart_of_africa::content::load::{load_assets, load_game_content, load_world};
 use heart_of_africa::render::map::{MapRenderer, TILE_SIZE};
 use heart_of_africa::save::{read_save, write_save};
 use heart_of_africa::sim::Input;
-use heart_of_africa::sim::game::Game;
+use heart_of_africa::sim::events;
+use heart_of_africa::sim::game::{Game, GameStatus};
 use heart_of_africa::sim::player::Direction;
 
 const SAVE_FILE: &str = "saves/autosave.json";
@@ -47,6 +48,7 @@ async fn main() {
     // The art manifest is optional by design (§5): missing art falls back to
     // placeholder shapes, so the game always runs.
     let assets = load_assets(Path::new("assets")).ok();
+    let mut ambient = Ambient::load(assets.as_ref()).await;
 
     let mut game = Game::new(1, content.clone(), &world);
     let mut input_log: Vec<Input> = Vec::new();
@@ -88,6 +90,16 @@ async fn main() {
                 Err(e) => eprintln!("load failed: {e}"),
             }
         }
+        // End of run: a new expedition with a fresh seed, or quit.
+        if game.status != GameStatus::Playing {
+            if is_key_pressed(KeyCode::N) {
+                game = Game::new(game.seed.wrapping_add(1), content.clone(), &world);
+                input_log.clear();
+            }
+            if is_key_pressed(KeyCode::Escape) {
+                std::process::exit(0);
+            }
+        }
 
         // UI buttons produce inputs too; all inputs are applied in order and
         // recorded in the replay log.
@@ -112,6 +124,9 @@ async fn main() {
             TILE_SIZE,
             game.tomb_revealed,
         );
+
+        // Ambient wind, weather-aware (render-side only).
+        ambient.tick(events::weather(game.seed, game.tick.day()));
 
         egui_macroquad::draw();
 

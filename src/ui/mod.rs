@@ -72,6 +72,28 @@ fn hud(ctx: &Context, game: &Game, world: &World, fps: i32, inputs: &mut Vec<Inp
             if ui.button("Rest (R)").clicked() {
                 inputs.push(Input::Rest);
             }
+            if game.status != GameStatus::Playing {
+                ui.add_space(6.0);
+                match &game.status {
+                    GameStatus::Won => {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 170, 40),
+                            "THE TOMB IS FOUND — press N for a new expedition, Esc to quit",
+                        );
+                    }
+                    GameStatus::Dead(reason) => {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 60, 40),
+                            format!("The expedition {reason}. Press N for a new expedition, Esc to quit."),
+                        );
+                    }
+                    GameStatus::Playing => {}
+                }
+            }
+            if let Some(last) = game.diary.last() {
+                ui.add_space(6.0);
+                ui.label(format!("Last: {}", last.text));
+            }
             ui.label("Arrows: walk   R: rest   S: save   L: load");
         });
 }
@@ -233,10 +255,18 @@ fn diary_panel(ctx: &Context, game: &Game) {
         });
 }
 
-/// One stat bar in the HUD.
+/// One stat bar in the HUD; color warns when the stat is low.
 fn bar(ui: &mut egui::Ui, label: &str, value: f32) {
+    let color = if value < 25.0 {
+        egui::Color32::from_rgb(200, 60, 40)
+    } else if value < 50.0 {
+        egui::Color32::from_rgb(200, 170, 40)
+    } else {
+        egui::Color32::from_rgb(90, 170, 90)
+    };
     ui.add(
         egui::ProgressBar::new((value / 100.0).clamp(0.0, 1.0))
+            .fill(color)
             .text(format!("{label}: {value:.0}")),
     );
 }

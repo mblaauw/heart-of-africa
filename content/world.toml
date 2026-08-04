@@ -83,14 +83,14 @@ y = 28
 [[settlements]]
 id = "kharga"
 name = "Kharga Oasis"
-polity = "Ottoman Egypt (southern frontier)"
+polity = "Khedivate of Egypt"
 x = 7
 y = 36
 
 [[settlements]]
 id = "dakhla"
 name = "Dakhla Oasis"
-polity = "Ottoman Egypt (southern frontier)"
+polity = "Khedivate of Egypt"
 x = 4
 y = 41
 

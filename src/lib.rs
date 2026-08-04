@@ -7,6 +7,7 @@
 //!   file fails CI by design (§9).
 //! - `save/` snapshots/restores game state as JSON, fully reproducible.
 
+pub mod audio;
 pub mod content;
 pub mod dialogue;
 pub mod save;

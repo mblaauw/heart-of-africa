@@ -256,9 +256,9 @@ mod tests {
     #[test]
     fn markers_have_painted_pixels() {
         for m in [Marker::Player, Marker::Settlement, Marker::Tomb] {
-            let rgba = marker(m);
+            let (_, _, rgba) = marker(m);
             assert!(rgba.iter().any(|&b| b != 0), "marker is not empty");
-            assert!(rgba.iter().any(|&b| b == 255), "marker has opaque pixels");
+            assert!(rgba.contains(&255), "marker has opaque pixels");
         }
     }
 }

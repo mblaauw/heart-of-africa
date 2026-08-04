@@ -132,6 +132,24 @@ impl BiomeGrid {
             _ => 0.0,
         }
     }
+
+    /// Number of defined biomes (the atlas row count).
+    pub fn biome_count(&self) -> usize {
+        self.biomes.len()
+    }
+
+    /// The biome definition at a table index (the atlas row).
+    pub fn biome_by_index(&self, index: u16) -> Option<&BiomeDef> {
+        self.biomes.get(index as usize)
+    }
+
+    /// Index of a tile's biome within the biome table (the atlas row).
+    pub fn biome_index_at(&self, x: u32, y: u32) -> Option<u16> {
+        if !self.in_bounds(x, y) {
+            return None;
+        }
+        Some(self.tiles[(y * self.width + x) as usize])
+    }
 }
 
 /// Parse `"3a6ea5"` or `"#3A6EA5"` into `(r, g, b)`.

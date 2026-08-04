@@ -13,7 +13,7 @@ mod art;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 const USAGE: &str = "\
 hoatool — Heart of Africa dev tool
