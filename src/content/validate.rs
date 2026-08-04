@@ -68,3 +68,24 @@ pub fn validate_content(content_dir: &Path) -> Result<Vec<String>> {
 
     Ok(problems)
 }
+
+/// Validate the art manifest (DESIGN.md §5).
+///
+/// Manifest schema errors fail hard; any file that EXISTS must load as an
+/// image. Missing files are allowed by design — placeholder art covers them.
+pub fn validate_assets(assets_dir: &Path) -> Result<Vec<String>> {
+    let manifest = load::load_assets(assets_dir)?;
+    let mut problems: Vec<String> = Vec::new();
+    for (id, path) in &manifest.entries {
+        if !path.exists() {
+            continue; // optional by design; placeholder art replaces it
+        }
+        if let Err(e) = image::open(path) {
+            problems.push(format!(
+                "asset {id:?} at {} is not a loadable image: {e}",
+                path.display()
+            ));
+        }
+    }
+    Ok(problems)
+}

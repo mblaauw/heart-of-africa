@@ -1,0 +1,10 @@
+# Content-ID-addressed art manifest (DESIGN.md §5).
+# All entries are OPTIONAL: a missing or unloadable file falls back to
+# placeholder art (tinted shape + label), so the game always runs regardless
+# of art coverage. Drop real PNGs in here later phases.
+
+version = 1
+
+[assets]
+"marker.player" = "art/player_marker.png"
+"marker.settlement" = "art/settlement_marker.png"

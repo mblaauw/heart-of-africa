@@ -1,7 +1,7 @@
-//! Content loaders: world.toml and the biome map (DESIGN.md §7, §8.2).
+//! Content loaders: world.toml, biome map, asset manifest (DESIGN.md §7, §8.2).
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -10,6 +10,12 @@ use crate::world::{River, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
 pub const WORLD_FILE: &str = "world.toml";
+
+/// Name of the art manifest, at the assets directory root.
+pub const ASSETS_FILE: &str = "assets.toml";
+
+/// Current art manifest format version.
+pub const ASSETS_VERSION: u32 = 1;
 
 /// Current world data format version; `world.toml` must declare it.
 pub const WORLD_VERSION: u32 = 1;
@@ -149,6 +155,56 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         rivers,
         start_settlement: raw.region.start_settlement,
     })
+}
+
+/// Content-ID-addressed art manifest (DESIGN.md §5).
+///
+/// Maps asset IDs to file paths relative to the assets directory. Every
+/// entry is optional: a missing or unloadable file means the renderer falls
+/// back to placeholder art (tinted shape + label), so the game always runs
+/// regardless of art coverage.
+#[derive(Debug, Clone, Default)]
+pub struct AssetManifest {
+    /// Asset ID -> absolute-ish path (assets dir joined with the entry).
+    pub entries: BTreeMap<String, PathBuf>,
+}
+
+impl AssetManifest {
+    /// Resolve an asset ID to its file path, if the manifest names it.
+    pub fn path(&self, id: &str) -> Option<&Path> {
+        self.entries.get(id).map(PathBuf::as_path)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct AssetsToml {
+    version: u32,
+    #[serde(default)]
+    assets: BTreeMap<String, String>,
+}
+
+/// Load the art manifest from the assets directory. Fails only when the
+/// manifest itself is broken; missing art files are NOT an error (§5).
+pub fn load_assets(assets_dir: &Path) -> Result<AssetManifest> {
+    let path = assets_dir.join(ASSETS_FILE);
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let raw: AssetsToml =
+        toml::from_str(&text).with_context(|| format!("parsing {}", ASSETS_FILE))?;
+    if raw.version != ASSETS_VERSION {
+        anyhow::bail!(
+            "{} declares version {}, expected {}",
+            ASSETS_FILE,
+            raw.version,
+            ASSETS_VERSION
+        );
+    }
+    let entries = raw
+        .assets
+        .into_iter()
+        .map(|(id, rel)| (id, assets_dir.join(rel)))
+        .collect();
+    Ok(AssetManifest { entries })
 }
 
 /// Biome definitions must satisfy: passable biomes cost >= 1.0, impassable

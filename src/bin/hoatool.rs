@@ -16,7 +16,7 @@ hoatool — Heart of Africa dev tool
 
 usage:
   hoatool gen-map <world.toml> <ascii-spec.txt> <out.png>
-  hoatool validate <content-dir>
+  hoatool validate <content-dir> [assets-dir]
 ";
 
 fn main() {
@@ -51,28 +51,53 @@ fn run_gen_map(args: &[String]) {
 }
 
 fn run_validate(args: &[String]) {
-    let dir = match args.first() {
+    let content_dir = match args.first() {
         Some(d) => d,
         None => {
             eprintln!("{USAGE}");
             std::process::exit(2);
         }
     };
-    match heart_of_africa::content::validate::validate_content(Path::new(dir)) {
+    let mut failed = false;
+
+    match heart_of_africa::content::validate::validate_content(Path::new(content_dir)) {
         Ok(problems) if problems.is_empty() => {
-            println!("validate: OK — content is valid");
+            println!("validate: content OK");
         }
         Ok(problems) => {
+            failed = true;
             for p in &problems {
-                eprintln!("validate: problem: {p}");
+                eprintln!("validate: content problem: {p}");
             }
-            eprintln!("validate: FAILED — {} problem(s)", problems.len());
-            std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("validate: error: {e:#}");
-            std::process::exit(1);
+            failed = true;
+            eprintln!("validate: content error: {e:#}");
         }
+    }
+
+    // Optional second argument: assets directory (validates the manifest).
+    if let Some(assets_dir) = args.get(1) {
+        match heart_of_africa::content::validate::validate_assets(Path::new(assets_dir)) {
+            Ok(problems) if problems.is_empty() => {
+                println!("validate: assets OK");
+            }
+            Ok(problems) => {
+                failed = true;
+                for p in &problems {
+                    eprintln!("validate: asset problem: {p}");
+                }
+            }
+            Err(e) => {
+                failed = true;
+                eprintln!("validate: assets error: {e:#}");
+            }
+        }
+    }
+
+    if failed {
+        eprintln!("validate: FAILED");
+        std::process::exit(1);
     }
 }
 

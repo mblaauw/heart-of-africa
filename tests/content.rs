@@ -2,7 +2,6 @@
 //! a content file fails CI — that is the intended guardrail.
 
 mod common;
-
 #[test]
 fn world_content_is_valid() {
     let problems = heart_of_africa::content::validate::validate_content(common::content_dir())
@@ -10,6 +9,17 @@ fn world_content_is_valid() {
     assert!(
         problems.is_empty(),
         "content lint problems:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+#[test]
+fn assets_manifest_is_valid() {
+    let problems = heart_of_africa::content::validate::validate_assets(common::assets_dir())
+        .expect("assets manifest parses");
+    assert!(
+        problems.is_empty(),
+        "asset lint problems:\n  {}",
         problems.join("\n  ")
     );
 }
