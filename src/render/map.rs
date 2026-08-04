@@ -17,6 +17,7 @@ pub const TILE_SIZE: f32 = 32.0;
 /// Placeholder marker colors (used until real art exists).
 const SETTLEMENT_MARKER: Color = Color::new(1.0, 1.0, 1.0, 0.85);
 const PLAYER_MARKER: Color = Color::new(1.0, 0.84, 0.2, 1.0);
+const TOMB_MARKER: Color = Color::new(0.85, 0.25, 0.2, 1.0);
 
 /// Renders the biome map and markers for one world.
 pub struct MapRenderer {
@@ -52,7 +53,17 @@ impl MapRenderer {
 
     /// Draw the map, centered on the player, plus settlement and player
     /// markers. `screen` is the current window size in pixels.
-    pub fn draw(&self, world: &World, player_pos: (u32, u32), screen: (f32, f32), tile_size: f32) {
+    /// Draw the map, centered on the player, plus settlement, tomb, and
+    /// player markers. `screen` is the current window size in pixels; `tomb`
+    /// is the revealed tomb tile, if known.
+    pub fn draw(
+        &self,
+        world: &World,
+        player_pos: (u32, u32),
+        screen: (f32, f32),
+        tile_size: f32,
+        tomb: Option<(u32, u32)>,
+    ) {
         let cam = Camera::new(player_pos, screen, tile_size);
 
         draw_texture_ex(
@@ -71,6 +82,9 @@ impl MapRenderer {
 
         for s in &world.settlements {
             self.draw_marker(&cam, s.x, s.y, self.settlement_tex.as_ref(), "S");
+        }
+        if let Some((tx, ty)) = tomb {
+            self.draw_marker(&cam, tx, ty, None, "T");
         }
         self.draw_marker(
             &cam,
@@ -101,10 +115,10 @@ impl MapRenderer {
             }
             None => {
                 let inset = tile_size * 0.15;
-                let color = if label == "P" {
-                    PLAYER_MARKER
-                } else {
-                    SETTLEMENT_MARKER
+                let color = match label {
+                    "P" => PLAYER_MARKER,
+                    "T" => TOMB_MARKER,
+                    _ => SETTLEMENT_MARKER,
                 };
                 draw_rectangle(
                     px + inset,

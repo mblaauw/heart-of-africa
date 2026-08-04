@@ -112,6 +112,25 @@ impl Game {
         }
     }
 
+    /// Rebuild a game from a save (DESIGN.md §4.10). The diary is not part
+    /// of the save (it is derivable from the input log); it starts empty.
+    pub fn from_save(save: Save, content: GameContent, _world: &World) -> Game {
+        Game {
+            seed: save.seed,
+            tick: save.tick,
+            player: save.player,
+            survival: save.survival,
+            reputation: save.reputation,
+            clues: save.clues,
+            diary: Vec::new(),
+            caches: save.caches,
+            status: save.status,
+            tomb_revealed: save.tomb_revealed,
+            conversation: None,
+            content,
+        }
+    }
+
     /// Advance the game by one input. Returns human-readable events of this
     /// step (also appended to the diary); empty when the input did nothing.
     ///
@@ -421,6 +440,25 @@ impl Game {
             .map(|o| (*o).clone())
             .collect();
         vec![(conv.npc_id.clone(), options)]
+    }
+
+    /// The current conversation line for the UI: `(npc name, node text)`.
+    pub fn current_talk(&self) -> Option<(String, String)> {
+        let conv = self.conversation.as_ref()?;
+        let npc = self.content.npcs.get(&conv.npc_id)?;
+        Some((npc.name.clone(), conv.node(npc).text.clone()))
+    }
+
+    /// The NPCs present at the current settlement, for the UI.
+    pub fn npcs_here<'a>(&'a self, world: &'a World) -> Vec<&'a Npc> {
+        let Some(settlement) = self.settlement_at(world) else {
+            return Vec::new();
+        };
+        self.content
+            .npcs
+            .values()
+            .filter(|npc| npc.settlement == settlement.id)
+            .collect()
     }
 
     fn die(&mut self, reason: String) {
