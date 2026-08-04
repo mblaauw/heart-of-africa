@@ -96,6 +96,16 @@ id = "gold_dust"
 demand = 1.3
 supply = 0.4
 
+[[market.item]]
+id = "coffee"
+demand = 1.0
+supply = 1.0
+
+[[market.item]]
+id = "beads"
+demand = 1.0
+supply = 1.0
+
 [[market]]
 settlement = "luxor"
 
@@ -118,6 +128,16 @@ supply = 1.4
 id = "salt"
 demand = 1.2
 supply = 0.8
+
+[[market.item]]
+id = "coffee"
+demand = 1.0
+supply = 1.0
+
+[[market.item]]
+id = "beads"
+demand = 1.0
+supply = 1.0
 
 [[market]]
 settlement = "aswan"

@@ -1,10 +1,12 @@
-# Cairo's fully populated named NPC (DESIGN.md §6.1).
-# Scripted dialogue is the game; the LLM garnish (§6) is off by default.
+# Cairo's named NPC (DESIGN.md §6.1). The tomb question is a runtime slot:
+# the seeded clue graph decides whether (and what) this NPC reveals.
+# tomb_answer = the node shown after the player asks about the tomb.
 
 id = "cairo_hakim"
 name = "Hakim Ahmed"
 settlement = "cairo"
 opening = "greet"
+tomb_answer = "tomb_answer"
 
 [[node]]
 id = "greet"
@@ -13,12 +15,6 @@ text = "The scholar Hakim Ahmed looks up from a stack of old papers. 'A visitor 
 [[node.option]]
 text = "Who are you?"
 go_to = "intro"
-
-[[node.option]]
-text = "I seek the tomb of Pharaoh Ahnk-Ahnk."
-if = { rep_ge = 5 }
-effect = { reveal_clue = "nile.c1" }
-go_to = "clue1"
 
 [[node.option]]
 text = "Give coffee as a gift."
@@ -35,26 +31,6 @@ id = "intro"
 text = "'I am Hakim Ahmed, scholar of the old kings. The Ottoman records and the French diggers both pass through my hands. If you seek the ancients, you have come to the right city.'"
 
 [[node.option]]
-text = "I seek the tomb of Pharaoh Ahnk-Ahnk."
-if = { rep_ge = 5 }
-effect = { reveal_clue = "nile.c1" }
-go_to = "clue1"
-
-[[node.option]]
-text = "Give coffee as a gift."
-if = { has_item = "coffee" }
-effect = { take_item = "coffee", rep_delta = 3 }
-go_to = "gift_ack"
-
-[[node.option]]
-text = "Farewell."
-effect = { end = true }
-
-[[node]]
-id = "clue1"
-text = "'The old kings are a guarded subject, but you speak with respect. A rumor reaches Cairo that a sheikh at Asyut keeps an old brass key — the sort of thing that opens more than a strongbox. The trail begins there.'"
-
-[[node.option]]
 text = "Give coffee as a gift."
 if = { has_item = "coffee" }
 effect = { take_item = "coffee", rep_delta = 3 }
@@ -69,10 +45,18 @@ id = "gift_ack"
 text = "'You are generous — and generosity is remembered in Cairo.'"
 
 [[node.option]]
-text = "I seek the tomb of Pharaoh Ahnk-Ahnk."
-if = { rep_ge = 5 }
-effect = { reveal_clue = "nile.c1" }
-go_to = "clue1"
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "tomb_answer"
+text = "He lowers his voice, glancing at the doorway. 'The old kings are a guarded subject. But you speak with respect — so listen.'"
 
 [[node.option]]
 text = "Give coffee as a gift."

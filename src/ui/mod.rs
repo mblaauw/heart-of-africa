@@ -38,7 +38,8 @@ fn hud(ctx: &Context, game: &Game, world: &World, fps: i32, inputs: &mut Vec<Inp
                 settlement_name
             ));
             ui.label(format!(
-                "Purse: {} piastres   |   f{:.0}",
+                "Weather: {}   |   Purse: {} piastres   |   f{:.0}",
+                crate::sim::events::weather(game.seed, game.tick.day()).label(),
                 game.player.money(),
                 fps
             ));
@@ -93,6 +94,30 @@ fn settlement_panel(ctx: &Context, game: &mut Game, world: &World, inputs: &mut 
             }
 
             ui.separator();
+            ui.label("Roads:");
+            let routes = game.routes_here(world);
+            if routes.is_empty() {
+                ui.label("No scouted routes leave here yet.");
+            }
+            for route in routes {
+                let (from, to) = (world.settlement(&route.from), world.settlement(&route.to));
+                let dest = if from.is_some_and(|s| s.id == settlement.id) {
+                    to
+                } else {
+                    from
+                };
+                let dest_name = dest.map_or("?", |s| s.name.as_str());
+                let label = if route.risky {
+                    format!("Caravan to {dest_name} (risky)")
+                } else {
+                    format!("Caravan to {dest_name}")
+                };
+                if ui.button(label).clicked() {
+                    inputs.push(Input::Travel(route.id.clone()));
+                }
+            }
+
+            ui.separator();
             ui.label("Market:");
             let Some(market) = game.content.markets.get(&settlement.id) else {
                 ui.label("No market here.");
@@ -121,23 +146,24 @@ fn settlement_panel(ctx: &Context, game: &mut Game, world: &World, inputs: &mut 
         });
 }
 
-/// The active conversation, if any.
+/// The active conversation, if any. The tomb question is the runtime slot
+/// of the seeded clue graph (DESIGN.md §4.5).
 fn conversation_panel(ctx: &Context, game: &mut Game, inputs: &mut Vec<Input>) {
-    let Some((name, text)) = game.current_talk() else {
+    let Some(talk) = game.talk_screen() else {
         return;
     };
-    egui::Window::new(name)
+    egui::Window::new(talk.npc_name)
         .default_pos([420.0, 60.0])
         .show(ctx, |ui| {
-            ui.label(text);
+            ui.label(talk.text);
             ui.separator();
-            let visible = game.visible_talk_options();
-            if let Some((npc_id, options)) = visible.first() {
-                for (index, option) in options.iter().enumerate() {
-                    if ui.button(&option.text).clicked() {
-                        inputs.push(Input::Talk(npc_id.clone(), index));
-                    }
+            for (index, option) in talk.options.iter().enumerate() {
+                if ui.button(option).clicked() {
+                    inputs.push(Input::Talk(talk.npc_id.clone(), index));
                 }
+            }
+            if talk.tomb_question && ui.button("Ask about the tomb.").clicked() {
+                inputs.push(Input::Talk(talk.npc_id.clone(), talk.options.len()));
             }
         });
 }

@@ -21,8 +21,8 @@ use crate::sim::survival::Survival;
 /// so equal hashes mean identical runs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Save {
-    /// World generation seed. Consumed by worldgen in Phase 3; recorded from
-    /// Phase 1 for replay compatibility.
+    /// World seed. The clue graph is a pure function of it and is
+    /// regenerated on load, so it is not stored here.
     pub seed: u64,
     pub tick: Tick,
     pub player: Player,
@@ -31,6 +31,10 @@ pub struct Save {
     pub reputation: BTreeMap<String, i32>,
     /// Obtained clue IDs.
     pub clues: BTreeSet<String>,
+    /// Herrings proven false (DESIGN.md §4.5).
+    pub false_clues: BTreeSet<String>,
+    /// Exclusive clues taken by rivals.
+    pub rivals_consumed: BTreeSet<String>,
     pub caches: Vec<Cache>,
     /// Tomb tile once the location clue names it.
     pub tomb_revealed: Option<(u32, u32)>,
@@ -86,6 +90,8 @@ mod tests {
             survival: Survival::new(),
             reputation: BTreeMap::new(),
             clues: BTreeSet::new(),
+            false_clues: BTreeSet::new(),
+            rivals_consumed: BTreeSet::new(),
             caches: Vec::new(),
             tomb_revealed: None,
             status: GameStatus::Playing,

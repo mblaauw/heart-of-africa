@@ -1,27 +1,49 @@
-# Asyut's clue-holding NPC: minimal tree for the chain (§10.2).
+# Asyut's named NPC. The tomb question is a runtime slot filled by the
+# seeded clue graph.
 
 id = "asyut_sheikh"
 name = "Sheikh Yusuf"
 settlement = "asyut"
 opening = "greet"
+tomb_answer = "tomb_answer"
 
 [[node]]
 id = "greet"
 text = "The sheikh of Asyut studies you from his carpet. 'Travelers pass through on their way to somewhere else. What is it you carry, that you stop here?'"
 
 [[node.option]]
-text = "I come from Hakim Ahmed of Cairo, seeking a brass key."
-if = { has_clue = "nile.c1" }
-effect = { reveal_clue = "nile.c2" }
-go_to = "key_given"
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."
 effect = { end = true }
 
 [[node]]
-id = "key_given"
-text = "'The old scholar still breathes, then. Good.' He draws a heavy brass key from his sash. 'For the priest of Luxor — he knows what it opens. Tell him the key has found its way home.'"
+id = "tomb_answer"
+text = "He studies you a long moment, then nods slowly. 'So. You are the one. Then hear what I have to tell you.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "gift_ack"
+text = "'Coffee — a thoughtful gift. You are remembered kindly, stranger.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
 
 [[node.option]]
 text = "Farewell."

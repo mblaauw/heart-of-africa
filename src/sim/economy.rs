@@ -67,15 +67,24 @@ impl Market {
 
     /// Buy price in piastres: base × season × demand × reputation modifier.
     pub fn buy_price(&self, goods: &Goods, season: f32, reputation: i32) -> u32 {
-        let rep_mod = 1.0 - (reputation.max(0) as f32) / 200.0;
-        (goods.base_price as f32 * season * self.factor(&goods.id).demand * rep_mod).round() as u32
+        Self::buy_price_with(goods, season, reputation, self.factor(&goods.id).demand)
     }
 
     /// Sell price in piastres: base × season × supply × penalty × rep modifier.
     pub fn sell_price(&self, goods: &Goods, season: f32, reputation: i32) -> u32 {
+        Self::sell_price_with(goods, season, reputation, self.factor(&goods.id).supply)
+    }
+
+    /// Buy price from an explicit demand factor (used with the daily drift).
+    pub fn buy_price_with(goods: &Goods, season: f32, reputation: i32, demand: f32) -> u32 {
         let rep_mod = 1.0 - (reputation.max(0) as f32) / 200.0;
-        (goods.base_price as f32 * season * self.factor(&goods.id).supply * SELL_PENALTY * rep_mod)
-            .round() as u32
+        (goods.base_price as f32 * season * demand * rep_mod).round() as u32
+    }
+
+    /// Sell price from an explicit supply factor (used with the daily drift).
+    pub fn sell_price_with(goods: &Goods, season: f32, reputation: i32, supply: f32) -> u32 {
+        let rep_mod = 1.0 - (reputation.max(0) as f32) / 200.0;
+        (goods.base_price as f32 * season * supply * SELL_PENALTY * rep_mod).round() as u32
     }
 
     fn factor(&self, goods_id: &str) -> MarketEntry {

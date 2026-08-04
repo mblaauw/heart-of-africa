@@ -38,6 +38,13 @@ name = "Tent"
 category = "gear"
 base_price = 50
 
+# Granted by the clue graph, never traded: the key item of the mystery.
+[[goods]]
+id = "brass_key"
+name = "Brass key"
+category = "gear"
+base_price = 1
+
 [[goods]]
 id = "coffee"
 name = "Coffee"

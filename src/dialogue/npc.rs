@@ -27,6 +27,10 @@ pub struct Npc {
     pub settlement: String,
     /// Node the conversation starts at.
     pub opening: String,
+    /// Node shown after the runtime "ask about the tomb" question (Phase 3:
+    /// the seeded clue graph decides what the NPC reveals). Empty = this NPC
+    /// never gets a tomb question.
+    pub tomb_answer: String,
     /// All named nodes, by ID.
     pub nodes: BTreeMap<String, Node>,
 }

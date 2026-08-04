@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod bot;
+
 use std::path::Path;
 
 /// The repo's content directory, resolved from the crate root so tests work

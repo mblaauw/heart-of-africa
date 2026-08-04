@@ -102,6 +102,12 @@ impl Conversation {
             .collect()
     }
 
+    /// Jump to a named node (used for the runtime tomb answer).
+    pub fn jump_to(&mut self, node_id: String) {
+        self.node = NodeId::Named(node_id);
+        self.ended = false;
+    }
+
     /// Choose the option at `index` (among *visible* options). Returns the
     /// option's effect for the caller to apply, moves to the next node, or
     /// ends the conversation. `None` on an out-of-range index.
@@ -151,6 +157,7 @@ mod tests {
             name: "Test".into(),
             settlement: "cairo".into(),
             opening: "greet".into(),
+            tomb_answer: "intro".into(),
             nodes: std::collections::BTreeMap::from([
                 (
                     "greet".into(),

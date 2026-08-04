@@ -87,6 +87,21 @@ impl Player {
         self.visited.contains(&(x, y))
     }
 
+    /// Record a tile as visited (used by fast travel, which skips tiles).
+    pub fn mark_visited(&mut self, x: u32, y: u32) {
+        if !self.has_visited(x, y) {
+            self.visited.push((x, y));
+        }
+    }
+
+    /// Place the expedition on a tile (fast travel). The tile is assumed
+    /// valid — a settlement — by the caller.
+    pub fn teleport(&mut self, x: u32, y: u32) {
+        self.x = x;
+        self.y = y;
+        self.mark_visited(x, y);
+    }
+
     pub fn money(&self) -> u32 {
         self.money
     }

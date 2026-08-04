@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::dialogue::npc::{Condition, DialogueOption, Effect, Node, Npc};
-use crate::sim::clues::{Clue, ClueKind, Expedition};
+use crate::sim::clues::{ClueKind, ClueTemplate, GeneratorConfig, GeneratorInput};
 use crate::sim::economy::{Category, Goods, Market, MarketEntry};
 use crate::sim::game::GameContent;
 use crate::sim::survival::Ailment;
 use crate::world::biome::{BiomeDef, BiomeGrid, parse_hex_color};
-use crate::world::{River, Settlement, World};
+use crate::world::{River, Route, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
 pub const WORLD_FILE: &str = "world.toml";
@@ -23,7 +23,7 @@ pub const GOODS_FILE: &str = "goods.toml";
 /// Name of the market factors file, at the content directory root.
 pub const MARKETS_FILE: &str = "markets.toml";
 
-/// Name of the clue chain file, at the content directory root.
+/// Name of the clue-graph generator file, at the content directory root.
 pub const CLUES_FILE: &str = "clues.toml";
 
 /// Directory of per-NPC dialogue files, under the content directory.
@@ -51,6 +51,17 @@ struct WorldToml {
     settlements: Vec<SettlementToml>,
     #[serde(default)]
     rivers: Vec<RiverToml>,
+    #[serde(default)]
+    routes: Vec<RouteToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct RouteToml {
+    id: String,
+    from: String,
+    to: String,
+    #[serde(default)]
+    risky: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -168,12 +179,24 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         })
         .collect();
 
+    let routes: Vec<Route> = raw
+        .routes
+        .iter()
+        .map(|r| Route {
+            id: r.id.clone(),
+            from: r.from.clone(),
+            to: r.to.clone(),
+            risky: r.risky,
+        })
+        .collect();
+
     Ok(World {
         width: img.width(),
         height: img.height(),
         grid,
         settlements,
         rivers,
+        routes,
         start_settlement: raw.region.start_settlement,
     })
 }
@@ -229,18 +252,19 @@ pub fn load_assets(assets_dir: &Path) -> Result<AssetManifest> {
 }
 
 // ---------------------------------------------------------------------------
-// Game content: goods, markets, clues, NPCs
+// Game content: goods, markets, generator inputs, NPCs
 // ---------------------------------------------------------------------------
 
-/// Load all game content (goods, markets, clues, NPCs, expedition) from the
-/// content directory. Schema errors and unresolvable references fail loudly.
+/// Load all game content (goods, markets, NPCs, clue-generator inputs) from
+/// the content directory. Schema errors and unresolvable references fail
+/// loudly.
 pub fn load_game_content(content_dir: &Path) -> Result<GameContent> {
+    let goods = load_goods(content_dir)?;
     Ok(GameContent {
-        goods: load_goods(content_dir)?,
+        goods: goods.clone(),
         markets: load_markets(content_dir)?,
-        clues: load_clues(content_dir)?,
         npcs: load_npcs(content_dir)?,
-        expedition: load_expedition(content_dir)?,
+        generator: load_generator_input(content_dir, &goods)?,
     })
 }
 
@@ -347,63 +371,71 @@ fn load_markets(content_dir: &Path) -> Result<BTreeMap<String, Market>> {
 struct CluesFile {
     version: u32,
     expedition: ExpeditionToml,
+    generator: GeneratorToml,
     #[serde(default)]
-    clue: Vec<ClueToml>,
+    template: Vec<ClueTemplateToml>,
 }
 
 #[derive(serde::Deserialize)]
 struct ExpeditionToml {
-    tomb_tile: (u32, u32),
+    tomb_candidates: Vec<(u32, u32)>,
+    #[allow(dead_code)]
     win_clues: usize,
 }
 
 #[derive(serde::Deserialize)]
-struct ClueToml {
-    id: String,
+struct GeneratorToml {
+    settlements: Vec<String>,
+    key_item: String,
+    rivals: Vec<String>,
+    #[serde(default)]
+    herrings: u32,
+    rep_gate_min: i32,
+    rep_gate_max: i32,
+}
+
+#[derive(serde::Deserialize)]
+struct ClueTemplateToml {
     kind: ClueKind,
-    settlement: String,
-    npc: String,
     #[serde(default)]
-    rep_gate: i32,
-    #[serde(default)]
-    prereq: Vec<String>,
-    #[serde(default)]
-    gives_item: Option<String>,
-    #[serde(default)]
-    requires_item: Option<String>,
+    red_herring: bool,
     text: String,
 }
 
-fn load_clues(content_dir: &Path) -> Result<BTreeMap<String, Clue>> {
+/// Load the seeded clue-graph generator inputs (config, templates, tomb
+/// candidates, key goods). `None` when no clues file exists.
+pub fn load_generator_input(
+    content_dir: &Path,
+    goods: &BTreeMap<String, Goods>,
+) -> Result<Option<GeneratorInput>> {
     let raw: CluesFile = read_toml(content_dir, CLUES_FILE)?;
     check_version(CLUES_FILE, raw.version)?;
-    let mut clues = BTreeMap::new();
-    for c in raw.clue {
-        clues.insert(
-            c.id.clone(),
-            Clue {
-                id: c.id,
-                kind: c.kind,
-                settlement: c.settlement,
-                npc: c.npc,
-                rep_gate: c.rep_gate,
-                prereq: c.prereq,
-                gives_item: c.gives_item,
-                requires_item: c.requires_item,
-                text: c.text,
-            },
-        );
-    }
-    Ok(clues)
-}
-
-/// The expedition win condition; `None` until a clues file exists.
-pub fn load_expedition(content_dir: &Path) -> Result<Option<Expedition>> {
-    let raw: CluesFile = read_toml(content_dir, CLUES_FILE)?;
-    check_version(CLUES_FILE, raw.version)?;
-    Ok(Some(Expedition {
-        tomb_tile: raw.expedition.tomb_tile,
-        win_clues: raw.expedition.win_clues,
+    let key_goods = goods.get(&raw.generator.key_item).cloned().ok_or_else(|| {
+        anyhow::anyhow!(
+            "generator key_item {:?} is not a good",
+            raw.generator.key_item
+        )
+    })?;
+    Ok(Some(GeneratorInput {
+        config: GeneratorConfig {
+            settlements: raw.generator.settlements,
+            key_item: raw.generator.key_item,
+            rivals: raw.generator.rivals,
+            herrings: raw.generator.herrings,
+            rep_gate_min: raw.generator.rep_gate_min,
+            rep_gate_max: raw.generator.rep_gate_max,
+        },
+        templates: raw
+            .template
+            .into_iter()
+            .map(|t| ClueTemplate {
+                kind: t.kind,
+                red_herring: t.red_herring,
+                text: t.text,
+            })
+            .collect(),
+        tomb_candidates: raw.expedition.tomb_candidates,
+        key_goods,
     }))
 }
 
@@ -413,6 +445,8 @@ struct NpcToml {
     name: String,
     settlement: String,
     opening: String,
+    #[serde(default)]
+    tomb_answer: String,
     #[serde(default)]
     node: Vec<NodeToml>,
 }
@@ -484,6 +518,7 @@ fn load_npcs(content_dir: &Path) -> Result<BTreeMap<String, Npc>> {
                 name: raw.name,
                 settlement: raw.settlement,
                 opening: raw.opening,
+                tomb_answer: raw.tomb_answer,
                 nodes,
             },
         );

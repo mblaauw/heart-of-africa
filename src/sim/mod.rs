@@ -7,8 +7,10 @@
 pub mod clock;
 pub mod clues;
 pub mod economy;
+pub mod events;
 pub mod game;
 pub mod player;
+pub mod rivals;
 pub mod survival;
 
 use serde::{Deserialize, Serialize};
@@ -37,4 +39,6 @@ pub enum Input {
     Bury(String),
     /// Retrieve one unit of a good from a cache at the current tile.
     Retrieve(String),
+    /// Caravan fast-travel along a scouted route (DESIGN.md §4.2).
+    Travel(String),
 }

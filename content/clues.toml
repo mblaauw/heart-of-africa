@@ -1,47 +1,48 @@
-# The deterministic clue chain of the vertical slice (DESIGN.md §4.5).
-# One complete chain for the mini-run: hint → key → corroboration → location.
-# A full seeded clue-graph generator replaces this in Phase 3.
+# Seeded clue-graph generator configuration (DESIGN.md §4.5, Phase 3).
+# Every playthrough regenerates the mystery from the world seed: role
+# assignment, tomb site, and texts vary; solvability is proven at
+# generation time (tests/clues.rs + Game::new) and preserved by rivals.
 
 version = 1
 
 [expedition]
-tomb_tile = [20, 26]
+# Candidate tomb tiles; the generator picks one per seed (all passable).
+tomb_candidates = [[20, 26], [24, 21], [17, 12]]
+# Corroborations needed to identify the tomb (the generator's shortest leg).
 win_clues = 4
 
-[[clue]]
-id = "nile.c1"
+[generator]
+# Settlements the generator distributes the clue graph across.
+settlements = ["cairo", "asyut", "luxor", "aswan"]
+# Item the key leg grants and requires elsewhere.
+key_item = "brass_key"
+# Rival explorers of this run (DESIGN.md §4.8).
+rivals = ["Mr. Harcourt", "Dr. Voss"]
+# Number of red herrings generated (each falsifiable via a corroboration).
+herrings = 1
+# Reputation gate ranges for clue nodes.
+rep_gate_min = 3
+rep_gate_max = 6
+
+# Text templates. {settlement} and {npc} are replaced with the assigned
+# names; {key} with the key item's display name.
+[[template]]
 kind = "hint"
-settlement = "cairo"
-npc = "cairo_hakim"
-rep_gate = 5
-prereq = []
-text = "The trail leads south to Asyut: the sheikh there keeps an old brass key that unlocks what lies beyond."
+text = "The trail is no secret to the old ones. Ask in {settlement}; {npc} there knows more than he lets on."
 
-[[clue]]
-id = "nile.c2"
+[[template]]
 kind = "key"
-settlement = "asyut"
-npc = "asyut_sheikh"
-rep_gate = 0
-prereq = ["nile.c1"]
-gives_item = "brass_key"
-text = "The sheikh presses a heavy brass key into your hand: 'For the priest of Luxor. He knows what it opens.'"
+text = "What was sealed must be opened. In {settlement} they keep the {key} — it has been waiting for a question like yours."
 
-[[clue]]
-id = "nile.c3"
+[[template]]
 kind = "corroboration"
-settlement = "luxor"
-npc = "luxor_priest"
-rep_gate = 0
-prereq = ["nile.c1"]
-requires_item = "brass_key"
-text = "The priest turns the key, nods, and speaks of the lost tomb: 'It is not by the river. Seek the guide at Aswan; he knows the hills.'"
+text = "The {key} speaks true. I have seen the records: what was buried is not by the river. Ask the one at {settlement}."
 
-[[clue]]
-id = "nile.c4"
+[[template]]
 kind = "location"
-settlement = "aswan"
-npc = "aswan_guide"
-rep_gate = 10
-prereq = ["nile.c3"]
-text = "The guide draws in the sand: a cleft in the eastern hills, a day's march past the quarries. 'There, under the red rock.'"
+text = "Two days' march east of {settlement}, past the quarries, the hills split open under the red rock. There the king sleeps."
+
+[[template]]
+kind = "hint"
+red_herring = true
+text = "They say the old king was buried beneath the river itself, where the Nile bends — a tomb under water, for a fool to dive for."

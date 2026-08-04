@@ -29,8 +29,19 @@ pub struct River {
     pub points: Vec<(u32, u32)>,
 }
 
+/// A caravan route between two settlements (DESIGN.md §4.2): fast travel
+/// once both endpoints are scouted. Risky routes roll a telegraphed
+/// encounter; safe scouted routes are genuinely safe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Route {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub risky: bool,
+}
+
 /// The loaded macro-geography of one region (DESIGN.md §3.1): the biome grid
-/// plus named settlements and rivers.
+/// plus named settlements, rivers, and caravan routes.
 #[derive(Debug, Clone)]
 pub struct World {
     pub width: u32,
@@ -38,6 +49,7 @@ pub struct World {
     pub grid: biome::BiomeGrid,
     pub settlements: Vec<Settlement>,
     pub rivers: Vec<River>,
+    pub routes: Vec<Route>,
     /// ID of the settlement where the expedition begins.
     pub start_settlement: String,
 }

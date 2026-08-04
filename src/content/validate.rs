@@ -7,6 +7,8 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use crate::sim::clues::ClueKind;
+
 use super::load;
 
 /// Validate all content under `content_dir` (world + game content).
@@ -128,96 +130,82 @@ fn validate_game_content(
         }
     }
 
-    // Clues: everything referenced resolves; the prerequisite graph is a DAG.
-    // Items granted by clues (like the brass key) join the item universe next
-    // to the goods catalog.
-    let mut granted_items: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for clue in content.clues.values() {
-        if let Some(item) = &clue.gives_item {
-            granted_items.insert(item.clone());
+    // Clue generator inputs: settlements exist and host NPCs, templates
+    // cover every (kind, herring) combination, tomb candidates are passable.
+    if let Some(gen_input) = &content.generator {
+        let config = &gen_input.config;
+        if config.settlements.is_empty() {
+            problems.push("generator: no settlements configured".to_string());
         }
-    }
-    let item_known = |id: &str| content.goods.contains_key(id) || granted_items.contains(id);
-
-    let mut clue_ids: HashSet<&str> = HashSet::new();
-    for clue in content.clues.values() {
-        if !clue_ids.insert(clue.id.as_str()) {
-            problems.push(format!("duplicate clue id {:?}", clue.id));
-        }
-        if world.settlement(&clue.settlement).is_none() {
-            problems.push(format!(
-                "clue {:?} names unknown settlement {:?}",
-                clue.id, clue.settlement
-            ));
-        }
-        if let Some(npc) = content.npcs.get(&clue.npc) {
-            if npc.settlement != clue.settlement {
+        for settlement in &config.settlements {
+            if world.settlement(settlement).is_none() {
+                problems.push(format!("generator: unknown settlement {settlement:?}"));
+            } else if !content
+                .npcs
+                .values()
+                .any(|npc| &npc.settlement == settlement)
+            {
                 problems.push(format!(
-                    "clue {:?}: NPC {:?} lives in {:?}, not {:?}",
-                    clue.id, clue.npc, npc.settlement, clue.settlement
-                ));
-            }
-        } else {
-            problems.push(format!(
-                "clue {:?} names unknown NPC {:?}",
-                clue.id, clue.npc
-            ));
-        }
-        if clue.rep_gate < 0 {
-            problems.push(format!("clue {:?} has negative rep_gate", clue.id));
-        }
-        for prereq in &clue.prereq {
-            if !content.clues.contains_key(prereq) {
-                problems.push(format!(
-                    "clue {:?} prereq {prereq:?} does not exist",
-                    clue.id
+                    "generator: settlement {settlement:?} has no named NPC to hold clues"
                 ));
             }
         }
-        for item in clue.gives_item.iter().chain(clue.requires_item.iter()) {
-            if !item_known(item) {
+        if !config.settlements.contains(&world.start_settlement) {
+            problems.push(format!(
+                "generator: start settlement {:?} is not among the graph settlements",
+                world.start_settlement
+            ));
+        }
+        if !content.goods.contains_key(&config.key_item) {
+            problems.push(format!(
+                "generator: key_item {:?} is not a good",
+                config.key_item
+            ));
+        }
+        if config.rivals.is_empty() {
+            problems.push("generator: no rivals configured".to_string());
+        }
+        if config.rep_gate_min < 0 || config.rep_gate_max < config.rep_gate_min {
+            problems.push(format!(
+                "generator: bad rep gate range {}..={}",
+                config.rep_gate_min, config.rep_gate_max
+            ));
+        }
+        let needed: [(ClueKind, bool); 5] = [
+            (ClueKind::Hint, false),
+            (ClueKind::Key, false),
+            (ClueKind::Corroboration, false),
+            (ClueKind::Location, false),
+            (ClueKind::Hint, true), // red herrings are hint-shaped
+        ];
+        for (kind, herring) in needed {
+            if !gen_input
+                .templates
+                .iter()
+                .any(|t| t.kind == kind && t.red_herring == herring)
+            {
                 problems.push(format!(
-                    "clue {:?} references unknown goods {item:?}",
-                    clue.id
+                    "generator: no template for kind {kind:?} herring={herring}"
                 ));
             }
         }
-    }
-
-    // Prerequisite graph must be acyclic: walk every chain, bounded by the
-    // number of clues (a cycle would revisit and overflow the bound).
-    for clue in content.clues.values() {
-        let mut stack: Vec<&str> = vec![clue.id.as_str()];
-        let mut steps = 0;
-        while let Some(id) = stack.pop() {
-            steps += 1;
-            if steps > content.clues.len() * 2 {
-                problems.push(format!("clue {id:?} prerequisite cycle detected"));
-                break;
-            }
-            if let Some(c) = content.clues.get(id) {
-                stack.extend(c.prereq.iter().map(String::as_str));
+        if gen_input.tomb_candidates.is_empty() {
+            problems.push("generator: no tomb candidates".to_string());
+        }
+        for &(tx, ty) in &gen_input.tomb_candidates {
+            if !world.grid.in_bounds(tx, ty) {
+                problems.push(format!("tomb candidate ({tx},{ty}) is outside the map"));
+            } else if !world.grid.passable_at(tx, ty) {
+                problems.push(format!("tomb candidate ({tx},{ty}) is impassable"));
             }
         }
+    } else {
+        problems.push("no clue generator configured (clues.toml missing)".to_string());
     }
 
-    if let Some(exp) = &content.expedition {
-        let (tx, ty) = exp.tomb_tile;
-        if !world.grid.in_bounds(tx, ty) {
-            problems.push(format!("tomb tile ({tx},{ty}) is outside the map"));
-        } else if !world.grid.passable_at(tx, ty) {
-            problems.push(format!("tomb tile ({tx},{ty}) is impassable"));
-        }
-        if exp.win_clues == 0 || exp.win_clues > content.clues.len() {
-            problems.push(format!(
-                "win_clues {} must be within 1..={}",
-                exp.win_clues,
-                content.clues.len()
-            ));
-        }
-    }
-
-    // NPCs: opening node, option targets, item/clue references resolve.
+    // NPCs: opening and tomb_answer nodes exist; option targets, items, and
+    // condition items resolve. (Clue references in dialogue are gone: the
+    // tomb question is a runtime slot of the seeded graph.)
     for npc in content.npcs.values() {
         if world.settlement(&npc.settlement).is_none() {
             problems.push(format!(
@@ -231,6 +219,12 @@ fn validate_game_content(
                 npc.id, npc.opening
             ));
         }
+        if !npc.tomb_answer.is_empty() && !npc.nodes.contains_key(&npc.tomb_answer) {
+            problems.push(format!(
+                "NPC {:?} tomb_answer node {:?} does not exist",
+                npc.id, npc.tomb_answer
+            ));
+        }
         for node in npc.nodes.values() {
             for option in &node.options {
                 if let Some(go_to) = &option.go_to
@@ -242,39 +236,56 @@ fn validate_game_content(
                     ));
                 }
                 if let Some(item) = &option.condition.has_item
-                    && !item_known(item)
+                    && !content.goods.contains_key(item)
                 {
                     problems.push(format!(
                         "NPC {:?} node {:?} condition item {item:?} does not exist",
                         npc.id, node.id
                     ));
                 }
-                if let Some(clue) = &option.condition.has_clue
-                    && !content.clues.contains_key(clue)
-                {
-                    problems.push(format!(
-                        "NPC {:?} node {:?} condition clue {clue:?} does not exist",
-                        npc.id, node.id
-                    ));
-                }
                 let effect = &option.effect;
                 for item in effect.take_item.iter().chain(effect.give_item.iter()) {
-                    if !item_known(item) {
+                    if !content.goods.contains_key(item) {
                         problems.push(format!(
                             "NPC {:?} node {:?} effect item {item:?} does not exist",
                             npc.id, node.id
                         ));
                     }
                 }
-                if let Some(clue) = &effect.reveal_clue
-                    && !content.clues.contains_key(clue)
-                {
+                if effect.reveal_clue.is_some() {
                     problems.push(format!(
-                        "NPC {:?} node {:?} reveals unknown clue {clue:?}",
+                        "NPC {:?} node {:?}: authored clue effects are gone; the tomb \
+                         question is a runtime slot",
                         npc.id, node.id
                     ));
                 }
             }
+        }
+    }
+
+    // Routes: endpoints resolve; ids unique.
+    let mut route_ids: HashSet<&str> = HashSet::new();
+    for route in &world.routes {
+        if !route_ids.insert(route.id.as_str()) {
+            problems.push(format!("duplicate route id {:?}", route.id));
+        }
+        if world.settlement(&route.from).is_none() {
+            problems.push(format!(
+                "route {:?} from unknown settlement {:?}",
+                route.id, route.from
+            ));
+        }
+        if world.settlement(&route.to).is_none() {
+            problems.push(format!(
+                "route {:?} to unknown settlement {:?}",
+                route.id, route.to
+            ));
+        }
+        if route.from == route.to {
+            problems.push(format!(
+                "route {:?} connects a settlement to itself",
+                route.id
+            ));
         }
     }
 

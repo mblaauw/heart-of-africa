@@ -88,3 +88,29 @@ points = [
   [14, 18], [14, 19], [14, 20], [14, 21], [14, 22], [14, 23],
   [15, 24], [15, 25], [15, 26], [15, 27], [15, 28], [15, 29],
 ]
+
+# Caravan routes (DESIGN.md §4.2): fast travel between settlements once both
+# endpoints are scouted. Risky routes roll a telegraphed encounter.
+[[routes]]
+id = "cairo_asyut"
+from = "cairo"
+to = "asyut"
+risky = false
+
+[[routes]]
+id = "asyut_luxor"
+from = "asyut"
+to = "luxor"
+risky = false
+
+[[routes]]
+id = "luxor_aswan"
+from = "luxor"
+to = "aswan"
+risky = false
+
+[[routes]]
+id = "aswan_cairo"
+from = "aswan"
+to = "cairo"
+risky = true
