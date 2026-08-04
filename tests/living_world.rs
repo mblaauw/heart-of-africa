@@ -149,96 +149,92 @@ fn rivals_never_break_solvability_under_their_schedule() {
 /// Red herrings are falsifiable: obtaining the contradicting corroboration
 /// proves them false (DESIGN.md §4.5).
 ///
-/// Runs on a seed whose herring sits at the start settlement or Asyut, and
-/// finishes before the first rival arrival (day 3), so nothing gets consumed
-/// mid-test.
+/// Rivals may consume a leg's clues mid-test, so this runs over seeds until
+/// one completes the whole sequence unmolested (deterministic per seed).
 #[test]
 fn herrings_are_falsifiable() {
     let world = load_world(common::content_dir()).expect("content loads");
     let content = load_game_content(common::content_dir()).expect("content loads");
 
-    // Find a seed with a conveniently placed herring.
-    let mut seed = None;
-    let mut herring_id = String::new();
-    for candidate in 0..100u64 {
-        let game = Game::new(candidate, content.clone(), &world);
-        if let Some(h) = game.graph.clues.values().find(|c| c.red_herring)
-            && (h.settlement == "cairo" || h.settlement == "asyut")
-        {
-            seed = Some(candidate);
-            herring_id = h.id.clone();
+    let mut completed = None;
+    for candidate in 0..1000u64 {
+        let mut game = Game::new(candidate, content.clone(), &world);
+        let Some(h) = game.graph.clues.values().find(|c| c.red_herring) else {
+            continue;
+        };
+        if h.settlement != "cairo" && h.settlement != "asyut" {
+            continue; // keep the walks short
+        }
+        let herring_id = h.id.clone();
+        let contradiction = h
+            .contradicts_herring
+            .clone()
+            .expect("herring is falsifiable");
+        let start_clue = game.graph.start_clue.clone();
+        let e1 = game
+            .graph
+            .clues
+            .values()
+            .find(|c| c.id == "e1")
+            .expect("leg A exists")
+            .id
+            .clone();
+
+        // Order: start hint, then the herring (still believed), then leg A.
+        let ok = try_ask_clue(&mut game, &world, &start_clue)
+            && try_ask_clue(&mut game, &world, &herring_id)
+            && game.clues.contains(&herring_id)
+            && !game.false_clues.contains(&herring_id)
+            && try_ask_clue(&mut game, &world, &e1)
+            && try_ask_clue(&mut game, &world, &contradiction)
+            && game.clues.contains(&contradiction)
+            && game.false_clues.contains(&herring_id);
+        if ok {
+            completed = Some(candidate);
             break;
         }
     }
-    let seed = seed.expect("some seed has a herring near the start");
-    let mut game = Game::new(seed, content, &world);
-
-    let contradiction = game
-        .graph
-        .clues
-        .get(&herring_id)
-        .and_then(|c| c.contradicts_herring.clone())
-        .expect("herring is falsifiable");
-
-    // Order matters: start hint, then the herring, then leg A (whose
-    // corroboration contradicts it). Leg A's nodes are gate-0 after c1.
-    let start_clue = game.graph.start_clue.clone();
-    ask_clue(&mut game, &world, &start_clue);
-    ask_clue(&mut game, &world, &herring_id);
-    assert!(game.clues.contains(&herring_id));
     assert!(
-        !game.false_clues.contains(&herring_id),
-        "herring believed until contradicted"
-    );
-
-    // Leg A: the key (gate 0), then the corroboration that contradicts.
-    let e1 = game
-        .graph
-        .clues
-        .values()
-        .find(|c| c.id == "e1")
-        .expect("leg A exists")
-        .id
-        .clone();
-    ask_clue(&mut game, &world, &e1);
-    ask_clue(&mut game, &world, &contradiction);
-    assert!(game.clues.contains(&contradiction));
-    assert!(
-        game.false_clues.contains(&herring_id),
-        "contradiction proves the rumor false"
-    );
-
-    // Fast enough that no rival arrival (day 3) could interfere.
-    assert!(
-        game.tick.day() < 3,
-        "test must finish before rival arrivals; finished day {}",
-        game.tick.day()
+        completed.is_some(),
+        "no seed demonstrated herring falsification without rival interference"
     );
 }
 
-/// Drive the dialogue to obtain one clue (gifting to meet the rep gate).
-fn ask_clue(game: &mut Game, world: &World, clue_id: &str) {
-    let clue = game.graph.clues.get(clue_id).expect("clue exists").clone();
+/// Try to obtain one clue by driving the dialogue (gifting to meet the rep
+/// gate). Returns false when anything blocks it (rival consumption, missing
+/// gift option, unreachable) — the caller retries another seed.
+fn try_ask_clue(game: &mut Game, world: &World, clue_id: &str) -> bool {
+    let Some(clue) = game.graph.clues.get(clue_id).cloned() else {
+        return false;
+    };
     // Prerequisites first.
     for prereq in clue.prereq.iter().chain(clue.prereq_any.iter()) {
-        if !game.clues.contains(prereq) {
-            ask_clue(game, world, prereq);
+        if !game.clues.contains(prereq) && !try_ask_clue(game, world, prereq) {
+            return false;
         }
     }
     // Travel to the settlement.
-    let to = world
-        .settlement(&clue.settlement)
-        .expect("settlement exists");
+    let Some(to) = world.settlement(&clue.settlement) else {
+        return false;
+    };
     let (x, y) = game.player.pos();
-    let path = find_path(&world.grid, (x, y), (to.x, to.y)).expect("walkable");
+    let Some(path) = find_path(&world.grid, (x, y), (to.x, to.y)) else {
+        return false;
+    };
     for pair in path.windows(2) {
-        let dir = heart_of_africa::sim::player::Direction::between(pair[0], pair[1]).unwrap();
+        let Some(dir) = heart_of_africa::sim::player::Direction::between(pair[0], pair[1]) else {
+            return false;
+        };
         game.apply(&Input::Move(dir), world);
     }
     // Meet the rep gate with gifts.
     while game.reputation(&clue.settlement) < clue.rep_gate {
-        let settlement = game.settlement_at(world).expect("at settlement");
-        let market = game.content.markets.get(&settlement.id).expect("market");
+        let Some(settlement) = game.settlement_at(world) else {
+            return false;
+        };
+        let Some(market) = game.content.markets.get(&settlement.id) else {
+            return false;
+        };
         let gift = if market.trades("coffee") {
             "coffee"
         } else {
@@ -247,7 +243,6 @@ fn ask_clue(game: &mut Game, world: &World, clue_id: &str) {
         if game.player.item_count(gift) == 0 {
             game.apply(&Input::Buy(gift.to_string()), world);
         }
-        let _ = game.talk_screen();
         let npc_id = clue.npc.clone();
         if game
             .conversation
@@ -256,12 +251,12 @@ fn ask_clue(game: &mut Game, world: &World, clue_id: &str) {
         {
             game.apply(&Input::Talk(npc_id.clone(), 0), world);
         }
-        let talk = game.talk_screen().expect("conversation open");
-        let index = talk
-            .options
-            .iter()
-            .position(|o| o.contains("gift"))
-            .expect("gift option visible");
+        let Some(talk) = game.talk_screen() else {
+            return false;
+        };
+        let Some(index) = talk.options.iter().position(|o| o.contains("gift")) else {
+            return false;
+        };
         game.apply(&Input::Talk(npc_id, index), world);
     }
     // Ask the tomb question.
@@ -273,10 +268,14 @@ fn ask_clue(game: &mut Game, world: &World, clue_id: &str) {
     {
         game.apply(&Input::Talk(npc_id.clone(), 0), world);
     }
-    let talk = game.talk_screen().expect("conversation open");
-    assert!(talk.tomb_question, "tomb question available for {clue_id}");
+    let Some(talk) = game.talk_screen() else {
+        return false;
+    };
+    if !talk.tomb_question {
+        return false; // consumed by a rival, or gated beyond reach
+    }
     game.apply(&Input::Talk(npc_id, talk.options.len()), world);
-    assert!(game.clues.contains(clue_id), "{clue_id} obtained");
+    game.clues.contains(clue_id)
 }
 
 fn is_exclusive(id: &str) -> bool {

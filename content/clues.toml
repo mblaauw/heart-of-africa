@@ -6,14 +6,15 @@
 version = 1
 
 [expedition]
-# Candidate tomb tiles; the generator picks one per seed (all passable).
-tomb_candidates = [[20, 26], [24, 21], [17, 12]]
+# Candidate tomb tiles across both regions; the generator picks one per seed.
+tomb_candidates = [[20, 26], [24, 21], [17, 12], [34, 58], [24, 40], [8, 48], [38, 44]]
 # Corroborations needed to identify the tomb (the generator's shortest leg).
 win_clues = 4
 
 [generator]
-# Settlements the generator distributes the clue graph across.
-settlements = ["cairo", "asyut", "luxor", "aswan"]
+# Settlements the generator distributes the clue graph across: Lower Egypt
+# and the Sahara/Sahel corridor (DESIGN.md §3.1, roadmap step 4).
+settlements = ["cairo", "asyut", "luxor", "aswan", "kharga", "dakhla", "kufra", "zinder", "kano"]
 # Item the key leg grants and requires elsewhere.
 key_item = "brass_key"
 # Rival explorers of this run (DESIGN.md §4.8).

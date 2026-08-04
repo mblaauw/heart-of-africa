@@ -1,0 +1,50 @@
+# Kharga's named NPC. The tomb question is a runtime slot filled
+# by the seeded clue graph.
+
+id = "elder_bashir"
+name = "Elder Bashir"
+settlement = "kharga"
+opening = "greet"
+tomb_answer = "tomb_answer"
+
+[[node]]
+id = "greet"
+text = "Elder Bashir sits in the shade of the palms, counting the caravans that never come. 'The road south is long and the water is short — you are either brave or foolish, traveler.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "gift_ack"
+text = "'Coffee, and from the coast at that. You honor the old ways — and the oasis remembers honor.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "tomb_answer"
+text = "He studies you a long moment, then nods. 'The old kings are spoken of even here, in the heart of the waste. Listen, and carry what I say like water.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }

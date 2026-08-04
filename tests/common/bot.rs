@@ -38,14 +38,26 @@ pub fn next_input_pub(game: &mut Game, world: &World) -> Option<Input> {
 }
 
 fn next_input(game: &mut Game, world: &World) -> Option<Input> {
+    // Critical supplies: use them, buy them in town, or march to a town
+    // that sells them (never loop on a no-op Buy in open country).
     if game.survival.hydration < 55.0 {
-        return Some(use_or_buy(game, world, "water"));
+        return supply_action(game, world, "water");
     }
     if game.survival.nutrition < 55.0 {
-        return Some(use_or_buy(game, world, "food"));
+        return supply_action(game, world, "food");
     }
+    // Rest when exhausted.
     if game.survival.rest < 40.0 {
         return Some(Input::Rest);
+    }
+    // Stock up while in town, before heading out.
+    if game.settlement_at(world).is_some() {
+        if game.survival.hydration < 80.0 && game.player.item_count("water") < 2 {
+            return Some(Input::Buy("water".to_string()));
+        }
+        if game.survival.nutrition < 80.0 && game.player.item_count("food") < 2 {
+            return Some(Input::Buy("food".to_string()));
+        }
     }
 
     if let Some(tomb) = game.tomb_revealed {
@@ -67,13 +79,33 @@ fn next_input(game: &mut Game, world: &World) -> Option<Input> {
     travel_or_walk(game, world, &clue_settlement)
 }
 
-/// Use a supply item if carried, else buy it at the current market.
-fn use_or_buy(game: &mut Game, _world: &World, id: &str) -> Input {
+/// Use a carried supply, buy it at the current market, or march toward the
+/// nearest settlement that sells it.
+fn supply_action(game: &mut Game, world: &World, id: &str) -> Option<Input> {
     if game.player.item_count(id) > 0 {
-        Input::Use(id.to_string())
-    } else {
-        Input::Buy(id.to_string())
+        return Some(Input::Use(id.to_string()));
     }
+    if game.settlement_at(world).is_some() {
+        return Some(Input::Buy(id.to_string()));
+    }
+    let target = nearest_market_settlement(game, world, id)?;
+    travel_or_walk(game, world, &target)
+}
+
+/// The nearest settlement (Manhattan) whose market trades the item.
+fn nearest_market_settlement(game: &Game, world: &World, id: &str) -> Option<String> {
+    let (x, y) = game.player.pos();
+    world
+        .settlements
+        .iter()
+        .filter(|s| {
+            game.content
+                .markets
+                .get(&s.id)
+                .is_some_and(|m| m.trades(id))
+        })
+        .min_by_key(|s| s.x.abs_diff(x) + s.y.abs_diff(y))
+        .map(|s| s.id.clone())
 }
 
 /// The next clue the bot should chase: not obtained, not taken by a rival,
@@ -163,11 +195,20 @@ fn travel_or_walk(game: &mut Game, world: &World, target: &str) -> Option<Input>
     step_toward(game, world, (target_settlement.x, target_settlement.y))
 }
 
-/// One walk step toward a tile (A* next hop).
+/// One walk step toward a tile (A* next hop). Travels at night through
+/// tsetse country (savanna) and when thirsty in open desert — daylight
+/// exposure is how the ailments find you (DESIGN.md §4.3).
 fn step_toward(game: &mut Game, world: &World, target: (u32, u32)) -> Option<Input> {
     let (x, y) = game.player.pos();
     let path = find_path(&world.grid, (x, y), target)?;
     let next = *path.get(1)?;
     let dir = Direction::between((x, y), next)?;
+    let (nx, ny) = (next.0, next.1);
+    let biome = world.grid.biome_id_at(nx, ny);
+    let daylight = game.tick.is_daylight();
+    let thirsty = game.survival.hydration < 60.0;
+    if daylight && (biome == "savanna" || (biome == "desert" && thirsty)) {
+        return Some(Input::Rest); // wait out the sun
+    }
     Some(Input::Move(dir))
 }

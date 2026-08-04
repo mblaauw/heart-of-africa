@@ -6,13 +6,14 @@
 version = 1
 
 [map]
-png = "maps/nile.png"
+png = "maps/world.png"
 legend = {
   "3a6ea5" = "water",
   "d9b36c" = "desert",
   "8fae5c" = "floodplain",
   "c4b454" = "savanna",
   "8c7a6b" = "mountain",
+  "5fbf8f" = "oasis",
 }
 
 [biome.water]
@@ -34,6 +35,10 @@ movement_cost = 1.0
 [biome.mountain]
 passable = true
 movement_cost = 3.0
+
+[biome.oasis]
+passable = true
+movement_cost = 1.0
 
 [region]
 id = "lower-egypt-nile"
@@ -75,6 +80,41 @@ polity = "Khedivate of Egypt"
 x = 16
 y = 28
 
+[[settlements]]
+id = "kharga"
+name = "Kharga Oasis"
+polity = "Ottoman Egypt (southern frontier)"
+x = 7
+y = 36
+
+[[settlements]]
+id = "dakhla"
+name = "Dakhla Oasis"
+polity = "Ottoman Egypt (southern frontier)"
+x = 4
+y = 41
+
+[[settlements]]
+id = "kufra"
+name = "Kufra Oasis"
+polity = "Sanusi brotherhood"
+x = 29
+y = 44
+
+[[settlements]]
+id = "zinder"
+name = "Zinder"
+polity = "Sultanate of Damagaram"
+x = 12
+y = 52
+
+[[settlements]]
+id = "kano"
+name = "Kano"
+polity = "Sokoto Caliphate"
+x = 20
+y = 62
+
 # River metadata: a polyline that must run through water tiles.
 # Points (tile x, tile y); y grows southward.
 [[rivers]]
@@ -113,4 +153,46 @@ risky = false
 id = "aswan_cairo"
 from = "aswan"
 to = "cairo"
+risky = true
+
+[[routes]]
+id = "cairo_kharga"
+from = "cairo"
+to = "kharga"
+risky = true
+
+[[routes]]
+id = "aswan_kharga"
+from = "aswan"
+to = "kharga"
+risky = true
+
+[[routes]]
+id = "kharga_dakhla"
+from = "kharga"
+to = "dakhla"
+risky = false
+
+[[routes]]
+id = "dakhla_kufra"
+from = "dakhla"
+to = "kufra"
+risky = true
+
+[[routes]]
+id = "dakhla_zinder"
+from = "dakhla"
+to = "zinder"
+risky = true
+
+[[routes]]
+id = "zinder_kano"
+from = "zinder"
+to = "kano"
+risky = false
+
+[[routes]]
+id = "kufra_kano"
+from = "kufra"
+to = "kano"
 risky = true

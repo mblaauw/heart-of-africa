@@ -1,0 +1,50 @@
+# Kufra's named NPC. The tomb question is a runtime slot filled
+# by the seeded clue graph.
+
+id = "guide_omar"
+name = "Guide Omar"
+settlement = "kufra"
+opening = "greet"
+tomb_answer = "tomb_answer"
+
+[[node]]
+id = "greet"
+text = "Guide Omar tends a small fire at the edge of the Kufra wells. 'Beyond this palm ring there is only sand and the dead. Only madmen and the honest come here.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "gift_ack"
+text = "'Coffee is rare this far south — you are generous, and generosity is remembered.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
+
+[[node]]
+id = "tomb_answer"
+text = "He pours coffee and speaks low. 'The old kings did not trust the river, and they did not trust the sun. What they buried, they buried deep. Listen.'"
+
+[[node.option]]
+text = "Give coffee as a gift."
+if = { has_item = "coffee" }
+effect = { take_item = "coffee", rep_delta = 3 }
+go_to = "gift_ack"
+
+[[node.option]]
+text = "Farewell."
+effect = { end = true }
