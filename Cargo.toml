@@ -3,7 +3,7 @@ name = "heart-of-africa"
 version = "0.1.0"
 edition = "2024"
 description = "Remake of Heart of Africa (1985) — open-world 1890s Africa expedition mystery"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [lib]
 name = "heart_of_africa"

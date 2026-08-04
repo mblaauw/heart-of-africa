@@ -55,5 +55,5 @@ for how to work in it.
 
 ## License
 
-MIT OR Apache-2.0 (as declared in `Cargo.toml`). Not affiliated with
+MIT (see [LICENSE](LICENSE)). Not affiliated with
 Electronic Arts; the original *Heart of Africa* is their property.
