@@ -1,0 +1,90 @@
+# Heart of Africa — world data, Lower Egypt & the Nile (DESIGN.md §3.1)
+# Source of truth for the map: content/maps/nile.txt (ASCII), rendered by:
+#   hoatool gen-map content/world.toml content/maps/nile.txt content/maps/nile.png
+# A typo here fails `cargo test` (content lint) — that is the intended guardrail.
+
+version = 1
+
+[map]
+png = "maps/nile.png"
+legend = {
+  "3a6ea5" = "water",
+  "d9b36c" = "desert",
+  "8fae5c" = "floodplain",
+  "c4b454" = "savanna",
+  "8c7a6b" = "mountain",
+}
+
+[biome.water]
+passable = false
+movement_cost = 0.0
+
+[biome.desert]
+passable = true
+movement_cost = 1.0
+
+[biome.floodplain]
+passable = true
+movement_cost = 1.5
+
+[biome.savanna]
+passable = true
+movement_cost = 1.0
+
+[biome.mountain]
+passable = true
+movement_cost = 3.0
+
+[region]
+id = "lower-egypt-nile"
+name = "Lower Egypt & the Nile"
+start_settlement = "cairo"
+
+[[settlements]]
+id = "alexandria"
+name = "Alexandria"
+polity = "Khedivate of Egypt"
+x = 4
+y = 1
+
+[[settlements]]
+id = "cairo"
+name = "Cairo"
+polity = "Khedivate of Egypt"
+x = 15
+y = 8
+
+[[settlements]]
+id = "asyut"
+name = "Asyut"
+polity = "Khedivate of Egypt"
+x = 14
+y = 16
+
+[[settlements]]
+id = "luxor"
+name = "Luxor"
+polity = "Khedivate of Egypt"
+x = 15
+y = 22
+
+[[settlements]]
+id = "aswan"
+name = "Aswan"
+polity = "Khedivate of Egypt"
+x = 16
+y = 28
+
+# River metadata: a polyline that must run through water tiles.
+# Points (tile x, tile y); y grows southward.
+[[rivers]]
+id = "nile"
+name = "The Nile"
+points = [
+  [10, 2], [10, 3], [10, 4], [10, 5],           # delta, west branch
+  [13, 2], [13, 3], [13, 4], [13, 5],           # delta, east branch
+  [14, 6], [14, 7], [14, 8], [14, 9], [14, 10], [14, 11], [14, 12],
+  [15, 13], [15, 14], [15, 15], [15, 16], [15, 17],
+  [14, 18], [14, 19], [14, 20], [14, 21], [14, 22], [14, 23],
+  [15, 24], [15, 25], [15, 26], [15, 27], [15, 28], [15, 29],
+]
