@@ -107,11 +107,14 @@ impl ClueGraph {
 
     /// Solvability proof: with `consumed` clue ids unavailable (taken by
     /// rivals), is at least one complete path from the start clue to the
-    /// location clue still reachable? Honoring prerequisites only (rep gates
-    /// are surmountable by the player).
+    /// location clue still reachable? Honoring prerequisites (rep gates are
+    /// surmountable by the player) and key items: a clue that requires an
+    /// item is only reachable if some reachable clue grants it (§4.5).
     pub fn is_solvable(&self, consumed: &BTreeSet<String>) -> bool {
-        // Reachability fixpoint over the graph from the start clue.
+        // Reachability fixpoint over the graph from the start clue, tracking
+        // granted items so requires_item gates are proven, not assumed.
         let mut reachable: BTreeSet<String> = BTreeSet::new();
+        let mut granted: BTreeSet<String> = BTreeSet::new();
         let mut changed = true;
         while changed {
             changed = false;
@@ -122,8 +125,15 @@ impl ClueGraph {
                 let all_met = clue.prereq.iter().all(|p| reachable.contains(p));
                 let any_met = clue.prereq_any.is_empty()
                     || clue.prereq_any.iter().any(|p| reachable.contains(p));
-                if all_met && any_met {
+                let item_met = clue
+                    .requires_item
+                    .as_ref()
+                    .is_none_or(|item| granted.contains(item));
+                if all_met && any_met && item_met {
                     reachable.insert(clue.id.clone());
+                    if let Some(item) = &clue.gives_item {
+                        granted.insert(item.clone());
+                    }
                     changed = true;
                 }
             }
@@ -210,6 +220,17 @@ impl<'a> ClueGenerator<'a> {
             .iter()
             .map(|s| (s.clone(), self.npc_for(s).to_string()))
             .collect();
+        let npc_name_of: BTreeMap<String, String> = npc_of
+            .iter()
+            .map(|(settlement, id)| {
+                let name = self
+                    .npcs
+                    .get(id)
+                    .map(|n| n.name.clone())
+                    .unwrap_or_else(|| id.clone());
+                (settlement.clone(), name)
+            })
+            .collect();
         let display_of: BTreeMap<String, String> = settlements
             .iter()
             .map(|s| {
@@ -236,6 +257,7 @@ impl<'a> ClueGenerator<'a> {
         let clue = |id: &str,
                     kind: ClueKind,
                     settlement: &str,
+                    text_at: &str,
                     prereq: Vec<String>,
                     prereq_any: Vec<String>,
                     rep_gate: i32,
@@ -256,8 +278,8 @@ impl<'a> ClueGenerator<'a> {
                 requires_item: requires.map(str::to_string),
                 text: self.render(
                     template,
-                    &display_of[settlement],
-                    &npc_of[settlement],
+                    &display_of[text_at],
+                    &npc_name_of[text_at],
                     &key_name,
                 ),
                 red_herring: herring,
@@ -271,6 +293,7 @@ impl<'a> ClueGenerator<'a> {
             "c1",
             ClueKind::Hint,
             &start_id,
+            &mid1_id,
             Vec::new(),
             Vec::new(),
             c1_gate,
@@ -287,6 +310,7 @@ impl<'a> ClueGenerator<'a> {
             "e1",
             ClueKind::Key,
             &mid1_id,
+            &mid2_id,
             vec![start_clue.clone()],
             Vec::new(),
             0,
@@ -299,6 +323,7 @@ impl<'a> ClueGenerator<'a> {
             "e2",
             ClueKind::Corroboration,
             &mid2_id,
+            &end_id,
             vec![e1.id.clone()],
             Vec::new(),
             0,
@@ -312,6 +337,7 @@ impl<'a> ClueGenerator<'a> {
             "f1",
             ClueKind::Hint,
             &mid1_id,
+            &mid2_id,
             vec![start_clue.clone()],
             Vec::new(),
             f1_gate,
@@ -324,6 +350,7 @@ impl<'a> ClueGenerator<'a> {
             "f2",
             ClueKind::Corroboration,
             &mid2_id,
+            &end_id,
             vec![f1.id.clone()],
             Vec::new(),
             f2_gate,
@@ -337,6 +364,7 @@ impl<'a> ClueGenerator<'a> {
         let c5 = clue(
             "c5",
             ClueKind::Location,
+            &end_id,
             &end_id,
             Vec::new(),
             vec![e2.id.clone(), f2.id.clone()],
@@ -358,6 +386,7 @@ impl<'a> ClueGenerator<'a> {
             let herring = clue(
                 &format!("h{}", i + 1),
                 ClueKind::Hint,
+                settlement,
                 settlement,
                 Vec::new(),
                 Vec::new(),
@@ -462,5 +491,77 @@ impl<'a> ClueGenerator<'a> {
             .first()
             .copied()
             .expect("at least one passable tomb candidate")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clue(
+        id: &str,
+        prereq_any: Vec<String>,
+        gives: Option<&str>,
+        requires: Option<&str>,
+    ) -> Clue {
+        Clue {
+            id: id.to_string(),
+            kind: ClueKind::Hint,
+            settlement: "cairo".into(),
+            npc: "npc".into(),
+            rep_gate: 0,
+            prereq: Vec::new(),
+            prereq_any,
+            gives_item: gives.map(str::to_string),
+            requires_item: requires.map(str::to_string),
+            text: id.to_string(),
+            red_herring: false,
+            contradicts_herring: None,
+        }
+    }
+
+    fn graph_with(clues: BTreeMap<String, Clue>) -> ClueGraph {
+        ClueGraph {
+            clues,
+            expedition: Expedition { tomb_tile: (0, 0) },
+            leg_a: vec!["c1".into(), "c5".into()],
+            leg_b: vec!["c1".into(), "c5".into()],
+            start_clue: "c1".into(),
+            location_clue: "c5".into(),
+            settlement_order: vec!["cairo".into()],
+            settlement_display: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn solvability_respects_key_items() {
+        // The location needs an item nobody grants: unsolvable.
+        let unsolvable = graph_with(BTreeMap::from([
+            ("c1".into(), clue("c1", Vec::new(), None, None)),
+            (
+                "c5".into(),
+                clue("c5", vec!["e1".into()], None, Some("brass_key")),
+            ),
+            ("e1".into(), clue("e1", vec!["c1".into()], None, None)),
+        ]));
+        assert!(!unsolvable.is_solvable(&BTreeSet::new()));
+
+        // Grant the key first: solvable.
+        let solvable = graph_with(BTreeMap::from([
+            ("c1".into(), clue("c1", Vec::new(), None, None)),
+            (
+                "e0".into(),
+                clue("e0", vec!["c1".into()], Some("brass_key"), None),
+            ),
+            (
+                "c5".into(),
+                clue("c5", vec!["e1".into()], None, Some("brass_key")),
+            ),
+            ("e1".into(), clue("e1", vec!["e0".into()], None, None)),
+        ]));
+        assert!(solvable.is_solvable(&BTreeSet::new()));
+
+        // Consuming the key-granting clue breaks it.
+        assert!(!solvable.is_solvable(&BTreeSet::from(["e0".to_string()])));
     }
 }

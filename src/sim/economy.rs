@@ -65,33 +65,18 @@ impl Market {
         self.items.contains_key(goods_id)
     }
 
-    /// Buy price in piastres: base × season × demand × reputation modifier.
-    pub fn buy_price(&self, goods: &Goods, season: f32, reputation: i32) -> u32 {
-        Self::buy_price_with(goods, season, reputation, self.factor(&goods.id).demand)
-    }
-
-    /// Sell price in piastres: base × season × supply × penalty × rep modifier.
-    pub fn sell_price(&self, goods: &Goods, season: f32, reputation: i32) -> u32 {
-        Self::sell_price_with(goods, season, reputation, self.factor(&goods.id).supply)
-    }
-
-    /// Buy price from an explicit demand factor (used with the daily drift).
+    /// Buy price in piastres from an explicit demand factor (the daily
+    /// drift): base × season × demand × reputation modifier. This is the
+    /// authoritative price — the sim charges it and the UI displays it.
     pub fn buy_price_with(goods: &Goods, season: f32, reputation: i32, demand: f32) -> u32 {
         let rep_mod = 1.0 - (reputation.max(0) as f32) / 200.0;
         (goods.base_price as f32 * season * demand * rep_mod).round() as u32
     }
 
-    /// Sell price from an explicit supply factor (used with the daily drift).
+    /// Sell price in piastres from an explicit supply factor (see above).
     pub fn sell_price_with(goods: &Goods, season: f32, reputation: i32, supply: f32) -> u32 {
         let rep_mod = 1.0 - (reputation.max(0) as f32) / 200.0;
         (goods.base_price as f32 * season * supply * SELL_PENALTY * rep_mod).round() as u32
-    }
-
-    fn factor(&self, goods_id: &str) -> MarketEntry {
-        self.items.get(goods_id).copied().unwrap_or(MarketEntry {
-            demand: 1.0,
-            supply: 1.0,
-        })
     }
 }
 
@@ -123,48 +108,36 @@ mod tests {
         }
     }
 
-    fn market() -> Market {
-        Market {
-            settlement_id: "cairo".into(),
-            items: BTreeMap::from([(
-                "dates".into(),
-                MarketEntry {
-                    demand: 0.6,
-                    supply: 1.5,
-                },
-            )]),
-        }
-    }
-
     #[test]
     fn buy_price_scales_with_demand_and_season() {
-        let m = market();
         let dates = goods("dates", 15);
         // base 15 × demand 0.6 = 9 (dry season), × 1.2 = 11 (flood season).
-        assert_eq!(m.buy_price(&dates, 1.0, 0), 9);
-        assert_eq!(m.buy_price(&dates, 1.2, 0), 11);
+        assert_eq!(Market::buy_price_with(&dates, 1.0, 0, 0.6), 9);
+        assert_eq!(Market::buy_price_with(&dates, 1.2, 0, 0.6), 11);
     }
 
     #[test]
     fn sell_price_has_resale_penalty() {
-        let m = market();
         let dates = goods("dates", 15);
         // base 15 × supply 1.5 × 0.6 = 13.5 -> 14.
-        assert_eq!(m.sell_price(&dates, 1.0, 0), 14);
+        assert_eq!(Market::sell_price_with(&dates, 1.0, 0, 1.5), 14);
     }
 
     #[test]
     fn reputation_modifier_discounts_prices() {
-        let m = market();
         let dates = goods("dates", 15);
-        assert!(m.buy_price(&dates, 1.0, 20) < m.buy_price(&dates, 1.0, 0));
+        assert!(
+            Market::buy_price_with(&dates, 1.0, 20, 0.6)
+                < Market::buy_price_with(&dates, 1.0, 0, 0.6)
+        );
     }
 
     #[test]
     fn absent_items_have_neutral_factors() {
         let m = Market::default();
         let salt = goods("salt", 20);
-        assert_eq!(m.buy_price(&salt, 1.0, 0), 20);
+        // Absent from the market: neutral factors 1.0 — but not tradable.
+        assert_eq!(Market::buy_price_with(&salt, 1.0, 0, 1.0), 20);
         assert!(!m.trades("salt"));
     }
 

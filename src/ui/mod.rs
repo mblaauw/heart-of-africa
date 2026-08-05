@@ -6,7 +6,6 @@
 use egui::Context;
 
 use crate::sim::Input;
-use crate::sim::economy::season_factor;
 use crate::sim::game::{Game, GameStatus};
 use crate::world::World;
 
@@ -142,15 +141,15 @@ fn settlement_panel(ctx: &Context, game: &mut Game, world: &World, inputs: &mut 
                 ui.label("No market here.");
                 return;
             };
-            let season = season_factor(game.tick.month());
-            let rep = game.reputation(&settlement.id);
             let goods_ids: Vec<String> = market.items.keys().cloned().collect();
             for id in goods_ids {
                 let Some(goods) = game.content.goods(&id) else {
                     continue;
                 };
-                let buy = market.buy_price(goods, season, rep);
-                let sell = market.sell_price(goods, season, rep);
+                // The authoritative prices (what the transaction will charge):
+                // base × season × drifted demand/supply × reputation.
+                let buy = game.buy_price(&settlement.id, &id).unwrap_or(0);
+                let sell = game.sell_price(&settlement.id, &id).unwrap_or(0);
                 let have = game.player.item_count(&id);
                 ui.horizontal(|ui| {
                     ui.label(format!("{} ({}p / {}p)", goods.name, buy, sell));
@@ -253,7 +252,34 @@ fn diary_panel(ctx: &Context, game: &Game) {
         .default_pos([420.0, 620.0])
         .resizable(true)
         .show(ctx, |ui| {
-            ui.label(format!("{} entries", game.diary.len()));
+            // The clue board (DESIGN.md §4.9): everything the expedition
+            // knows, false rumors marked, the tomb line once revealed.
+            ui.label("Clues:");
+            if game.clues.is_empty() {
+                ui.label("(none yet — ask about the tomb)");
+            }
+            let clue_ids: Vec<String> = game.clues.iter().cloned().collect();
+            for id in clue_ids {
+                let Some(clue) = game.graph.clues.get(&id) else {
+                    continue;
+                };
+                if game.false_clues.contains(&id) {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(140, 140, 140),
+                        format!("[proved false] {}", clue.text),
+                    );
+                } else {
+                    ui.label(&clue.text);
+                }
+            }
+            if let Some((tx, ty)) = game.tomb_revealed {
+                ui.colored_label(
+                    egui::Color32::from_rgb(200, 170, 40),
+                    format!("The tomb: the cleft in the hills at ({tx}, {ty})."),
+                );
+            }
+            ui.separator();
+            ui.label(format!("Log — {} entries", game.diary.len()));
             egui::ScrollArea::vertical()
                 .max_height(220.0)
                 .show(ui, |ui| {

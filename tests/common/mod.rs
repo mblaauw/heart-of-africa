@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 pub mod bot;
+pub mod player_bot;
 
 use std::path::Path;
 

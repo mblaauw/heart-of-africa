@@ -140,9 +140,8 @@ impl Game {
         }
     }
 
-    /// Rebuild a game from a save (DESIGN.md §4.10). The diary is not part
-    /// of the save (it is derivable from the input log); it starts empty.
-    /// The clue graph is regenerated from the save's seed.
+    /// Rebuild a game from a save (DESIGN.md §4.10), including the diary
+    /// (the quest log). The clue graph is regenerated from the save's seed.
     pub fn from_save(save: Save, content: GameContent, world: &World) -> Game {
         let graph = generate_graph(save.seed, &content, world);
         Game {
@@ -154,7 +153,7 @@ impl Game {
             clues: save.clues,
             false_clues: save.false_clues,
             rivals_consumed: save.rivals_consumed,
-            diary: Vec::new(),
+            diary: save.diary,
             caches: save.caches,
             status: save.status,
             tomb_revealed: save.tomb_revealed,
@@ -167,11 +166,14 @@ impl Game {
     /// Advance the game by one input. Returns human-readable events of this
     /// step (also appended to the diary); empty when the input did nothing.
     ///
-    /// No-op while the run has ended (won or dead).
+    /// No-op while the run has ended (won or dead). The daily director runs
+    /// once per in-game day CROSSED by the input (walk, rest, fast travel) —
+    /// never repeatedly at midnight, never skipped by multi-day travel.
     pub fn apply(&mut self, input: &Input, world: &World) -> Vec<String> {
         if self.status != GameStatus::Playing {
             return Vec::new();
         }
+        let day_before = self.tick.day();
         let mut events = match input {
             Input::Move(dir) => self.apply_move(*dir, world),
             Input::Rest => self.apply_rest(world),
@@ -184,9 +186,13 @@ impl Game {
             Input::Travel(route_id) => self.apply_travel(route_id, world),
             Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
         };
-        // The daily director: weather, market drift, rivals (DESIGN.md §4.8).
-        if self.tick.hour_of_day() == 0 && self.status == GameStatus::Playing {
-            events.extend(self.daily());
+        // The daily director: rivals move and consume exclusives — exactly
+        // once per crossed day (DESIGN.md §4.8). Weather and market drift
+        // stay pure functions of (seed, day), read on demand.
+        if self.status == GameStatus::Playing {
+            for day in (day_before + 1)..=self.tick.day() {
+                events.extend(self.process_day(day));
+            }
         }
         for text in &events {
             self.diary.push(DiaryEntry {
@@ -208,6 +214,7 @@ impl Game {
             clues: self.clues.clone(),
             false_clues: self.false_clues.clone(),
             rivals_consumed: self.rivals_consumed.clone(),
+            diary: self.diary.clone(),
             caches: self.caches.clone(),
             tomb_revealed: self.tomb_revealed,
             status: self.status.clone(),
@@ -245,12 +252,26 @@ impl Game {
         if self.player.try_move(&world.grid, dir).is_none() {
             return Vec::new();
         }
+        // One tile costs its biome's movement cost in in-game hours (the
+        // data's costs are real: floodplain 2, mountain 3, open ground 1).
+        let (x, y) = self.player.pos();
+        let cost = world.grid.movement_cost_at(x, y) as u64;
+        for _ in 0..cost {
+            self.advance_travel(world);
+        }
+        self.after_movement();
+        Vec::new()
+    }
+
+    /// One in-game hour of travel — the single per-hour rule shared by
+    /// walking and caravan travel: clock, survival drain, and the day's
+    /// weather (DESIGN.md §3.3).
+    pub(crate) fn advance_travel(&mut self, world: &World) {
         self.tick.advance();
         let (x, y) = self.player.pos();
         let biome = world.grid.biome_id_at(x, y);
         self.survival
             .on_travel(biome, self.tick.hour_of_day(), self.tick.month());
-        // Weather affects travel (DESIGN.md §3.3): telegraphed, deterministic.
         match events::weather(self.seed, self.tick.day()) {
             events::Weather::Heatwave if biome == "desert" || biome == "savanna" => {
                 self.survival.hydration = (self.survival.hydration - 0.05).max(0.0);
@@ -260,8 +281,6 @@ impl Game {
             }
             _ => {}
         }
-        self.after_movement();
-        Vec::new()
     }
 
     fn apply_rest(&mut self, world: &World) -> Vec<String> {
@@ -283,6 +302,40 @@ impl Game {
         }
     }
 
+    /// The authoritative buy price at a settlement: base × season × drifted
+    /// demand × reputation (DESIGN.md §4.4). The UI displays this and
+    /// `apply_buy` charges it — one price, one source of truth.
+    pub fn buy_price(&self, settlement: &str, id: &str) -> Option<u32> {
+        let goods = self.content.goods(id)?;
+        let market = self.content.markets.get(settlement)?;
+        if !market.trades(id) {
+            return None;
+        }
+        let entry = self.drifted_entry(market, id);
+        Some(Market::buy_price_with(
+            goods,
+            season_factor(self.tick.month()),
+            self.reputation(settlement),
+            entry.demand,
+        ))
+    }
+
+    /// The authoritative sell price at a settlement (see `buy_price`).
+    pub fn sell_price(&self, settlement: &str, id: &str) -> Option<u32> {
+        let goods = self.content.goods(id)?;
+        let market = self.content.markets.get(settlement)?;
+        if !market.trades(id) {
+            return None;
+        }
+        let entry = self.drifted_entry(market, id);
+        Some(Market::sell_price_with(
+            goods,
+            season_factor(self.tick.month()),
+            self.reputation(settlement),
+            entry.supply,
+        ))
+    }
+
     fn apply_buy(&mut self, id: &str, world: &World) -> Vec<String> {
         let Some(settlement) = self.settlement_at(world) else {
             return Vec::new();
@@ -290,16 +343,9 @@ impl Game {
         let Some(goods) = self.content.goods(id) else {
             return Vec::new();
         };
-        let Some(market) = self.content.markets.get(&settlement.id) else {
+        let Some(price) = self.buy_price(&settlement.id, id) else {
             return Vec::new();
         };
-        if !market.trades(id) {
-            return Vec::new();
-        }
-        let entry = self.drifted_entry(market, id);
-        let season = season_factor(self.tick.month());
-        let rep = self.reputation(&settlement.id);
-        let price = Market::buy_price_with(goods, season, rep, entry.demand);
         if !self.player.spend(price) {
             return Vec::new();
         }
@@ -317,16 +363,12 @@ impl Game {
         let Some(goods) = self.content.goods(id) else {
             return Vec::new();
         };
-        let Some(market) = self.content.markets.get(&settlement.id) else {
+        let Some(price) = self.sell_price(&settlement.id, id) else {
             return Vec::new();
         };
-        if !market.trades(id) || !self.player.remove_item(id) {
+        if !self.player.remove_item(id) {
             return Vec::new();
         }
-        let entry = self.drifted_entry(market, id);
-        let season = season_factor(self.tick.month());
-        let rep = self.reputation(&settlement.id);
-        let price = Market::sell_price_with(goods, season, rep, entry.supply);
         self.player.add_money(price);
         vec![format!(
             "Sold 1 {} for {} piastres in {}.",
@@ -494,8 +536,10 @@ impl Game {
         vec![format!("Recovered 1 {name} from the cache.")]
     }
 
-    fn daily(&mut self) -> Vec<String> {
-        let day = self.tick.day();
+    /// The daily director for one specific in-game day: rivals move and
+    /// consume exclusives (DESIGN.md §4.8). Called exactly once per crossed
+    /// day from `apply`.
+    fn process_day(&mut self, day: u64) -> Vec<String> {
         let mut events = Vec::new();
         let order = &self.graph.settlement_order;
         let rivals_names: Vec<String> = self

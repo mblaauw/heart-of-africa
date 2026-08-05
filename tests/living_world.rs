@@ -281,3 +281,111 @@ fn try_ask_clue(game: &mut Game, world: &World, clue_id: &str) -> bool {
 fn is_exclusive(id: &str) -> bool {
     matches!(id, "e1" | "e2" | "f1" | "f2")
 }
+
+/// The key-item gate is enforced (DESIGN.md §4.5): a clue with
+/// `requires_item` is unrevealable while the player lacks the item — bury
+/// the brass key and the corroboration stays locked until it is recovered.
+#[test]
+fn key_item_gate_is_enforced() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    let content = load_game_content(common::content_dir()).expect("content loads");
+
+    let mut completed = None;
+    for seed in 0..1000u64 {
+        let mut game = Game::new(seed, content.clone(), &world);
+        // Keep the legs nearby so the walk stays short (rival-free).
+        let (e1, e2) = {
+            let e1 = game.graph.clues.get("e1").expect("leg A exists").clone();
+            let e2 = game.graph.clues.get("e2").expect("leg A exists").clone();
+            if !["asyut", "luxor"].contains(&e1.settlement.as_str())
+                || !["asyut", "luxor"].contains(&e2.settlement.as_str())
+            {
+                continue;
+            }
+            (e1, e2)
+        };
+
+        let start = game.graph.start_clue.clone();
+        if !try_ask_clue(&mut game, &world, &start) {
+            continue;
+        }
+        if !try_ask_clue(&mut game, &world, &e1.id) {
+            continue;
+        }
+        assert_eq!(game.player.item_count("brass_key"), 1, "the key is carried");
+
+        // Walk to the corroboration's settlement first, then bury the key
+        // right there — bury and retrieve must share one tile.
+        let to = world.settlement(&e2.settlement).expect("settlement exists");
+        let (x, y) = game.player.pos();
+        let Some(path) = find_path(&world.grid, (x, y), (to.x, to.y)) else {
+            continue;
+        };
+        for pair in path.windows(2) {
+            let Some(dir) = heart_of_africa::sim::player::Direction::between(pair[0], pair[1])
+            else {
+                continue;
+            };
+            game.apply(&Input::Move(dir), &world);
+        }
+        game.apply(&Input::Bury("brass_key".to_string()), &world);
+
+        // With the key buried, the tomb question must be unavailable (unless
+        // a herring shares this NPC — then this seed cannot demonstrate the
+        // gate, so skip it).
+        let npc_id = e2.npc.clone();
+        if game
+            .conversation
+            .as_ref()
+            .is_none_or(|c| c.npc_id != npc_id)
+        {
+            game.apply(&Input::Talk(npc_id.clone(), 0), &world);
+        }
+        let talk = game.talk_screen().expect("conversation open");
+        if talk.tomb_question {
+            continue;
+        }
+
+        // Recover the key: the question returns and the clue is revealable
+        // (unless a rival consumed it mid-walk — then try another seed).
+        game.apply(&Input::Retrieve("brass_key".to_string()), &world);
+        let talk = game.talk_screen().expect("conversation open");
+        if !talk.tomb_question {
+            continue;
+        }
+        game.apply(&Input::Talk(npc_id, talk.options.len()), &world);
+        if game.clues.contains(&e2.id) {
+            completed = Some(seed);
+            break;
+        }
+    }
+    assert!(
+        completed.is_some(),
+        "no seed demonstrated the key-item gate without rival interference"
+    );
+}
+
+/// The in-game-information acceptance (§10.3): the player-view bot — which
+/// never reads the clue graph, obtained clues, or hidden flags — finishes
+/// 100 seeds using only the diary prose, visible options, residents, and
+/// the revealed tomb marker.
+#[test]
+fn player_view_bot_completes_100_seeds() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    for seed in 0..100 {
+        let mut game = fresh_game(seed, &world);
+        let mut bot = common::player_bot::PlayerBot::new();
+        let log = bot.play_recording(&mut game, &world);
+        assert_eq!(
+            game.status,
+            GameStatus::Won,
+            "seed {seed} not winnable from player-view information ({} inputs)",
+            log.len()
+        );
+        assert!(
+            log.len() < common::player_bot::INPUT_BUDGET,
+            "seed {seed} softlocked at {} inputs",
+            log.len()
+        );
+    }
+}

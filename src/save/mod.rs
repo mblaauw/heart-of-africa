@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sim::Input;
 use crate::sim::clock::Tick;
-use crate::sim::game::{Cache, GameStatus};
+use crate::sim::game::{Cache, DiaryEntry, GameStatus};
 use crate::sim::player::Player;
 use crate::sim::survival::Survival;
 
@@ -35,6 +35,9 @@ pub struct Save {
     pub false_clues: BTreeSet<String>,
     /// Exclusive clues taken by rivals.
     pub rivals_consumed: BTreeSet<String>,
+    /// The diary — the quest log and clue board (DESIGN.md §4.9). Entries
+    /// are append-only in `apply`, so saving it stays deterministic.
+    pub diary: Vec<DiaryEntry>,
     pub caches: Vec<Cache>,
     /// Tomb tile once the location clue names it.
     pub tomb_revealed: Option<(u32, u32)>,
@@ -95,6 +98,7 @@ mod tests {
             caches: Vec::new(),
             tomb_revealed: None,
             status: GameStatus::Playing,
+            diary: Vec::new(),
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],
         }
     }

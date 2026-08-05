@@ -123,7 +123,7 @@ impl Game {
     /// The clue this NPC can currently reveal. An NPC may hold several clues
     /// (e.g. a herring next to a real one); the first askable one in id
     /// order wins: not obtained, not consumed by a rival, prerequisites and
-    /// rep gate met.
+    /// rep gate met, and the required item carried (DESIGN.md §4.5 keys).
     pub(crate) fn pending_clue_of_npc_inner(&self, npc_id: &str) -> Option<&Clue> {
         self.graph
             .clues
@@ -134,6 +134,9 @@ impl Game {
                     && !self.rivals_consumed.contains(&c.id)
                     && self.graph.prereqs_met(&c.id, &self.clues)
                     && self.reputation(&c.settlement) >= c.rep_gate
+                    && c.requires_item
+                        .as_ref()
+                        .is_none_or(|item| self.player.item_count(item) > 0)
             })
     }
 
