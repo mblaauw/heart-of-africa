@@ -3,6 +3,7 @@
 //! Invariant: this module must never import `macroquad` or `egui`.
 
 pub mod biome;
+pub mod coords;
 pub mod pathfind;
 
 use serde::{Deserialize, Serialize};

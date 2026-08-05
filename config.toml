@@ -13,3 +13,11 @@ base_url = "https://opencode.ai/zen/go/v1"
 timeout_ms = 15000
 max_output_tokens = 1000
 cache = true               # per-session response cache keyed by (npc_id, context_hash)
+
+
+# Expedition timing (expansion spec, Part I.8): departure date and the
+# expedition mandate's deadline. The deadline is five in-game years by
+# default and configurable for testing and accessibility.
+[expedition]
+start_year = 1895
+mandate_years = 5

@@ -14,6 +14,11 @@ use crate::sim::game::{Cache, DiaryEntry, GameStatus};
 use crate::sim::player::Player;
 use crate::sim::survival::Survival;
 
+/// Current save format version. Old versions are rejected with a clear
+/// message (`from_json`); pre-release saves were explicitly invalidated when
+/// versioning landed (expansion spec, Part III).
+pub const SAVE_VERSION: u32 = 1;
+
 /// A complete, reproducible snapshot of a run (DESIGN.md §4.10).
 ///
 /// Invariant: replaying `input_log` from `(seed, tick 0)` reproduces this
@@ -21,6 +26,10 @@ use crate::sim::survival::Survival;
 /// so equal hashes mean identical runs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Save {
+    /// Save format version; `#[serde(default)]` lets pre-version saves load
+    /// as version 0 so they get the rejection message, not a parse error.
+    #[serde(default)]
+    pub version: u32,
     /// World seed. The clue graph is a pure function of it and is
     /// regenerated on load, so it is not stored here.
     pub seed: u64,
@@ -64,9 +73,17 @@ pub fn to_json(save: &Save) -> anyhow::Result<String> {
     Ok(serde_json::to_string_pretty(save)?)
 }
 
-/// Deserialize a save from JSON.
+/// Deserialize a save from JSON, rejecting unsupported versions.
 pub fn from_json(text: &str) -> anyhow::Result<Save> {
-    Ok(serde_json::from_str(text)?)
+    let save: Save = serde_json::from_str(text)?;
+    if save.version != SAVE_VERSION {
+        anyhow::bail!(
+            "save version {} is not supported (expected {SAVE_VERSION}); \
+             pre-release saves were invalidated when save versioning landed",
+            save.version
+        );
+    }
+    Ok(save)
 }
 
 /// Write a save to a file (save-anywhere, DESIGN.md §4.10).
@@ -87,6 +104,7 @@ mod tests {
 
     fn sample() -> Save {
         Save {
+            version: SAVE_VERSION,
             seed: 42,
             tick: Tick::from_hours(7),
             player: Player::new(15, 8),
@@ -124,6 +142,16 @@ mod tests {
         let b = a.clone();
         a.tick.advance();
         assert_ne!(a.state_hash(), b.state_hash());
+    }
+
+    #[test]
+    fn unsupported_versions_are_rejected() {
+        let mut save = sample();
+        save.version = 0; // as a pre-version save would load
+        let json = to_json(&save).unwrap();
+        let err = from_json(&json).unwrap_err().to_string();
+        assert!(err.contains("save version 0"), "{err}");
+        assert!(err.contains("expected 1"), "{err}");
     }
 
     #[test]

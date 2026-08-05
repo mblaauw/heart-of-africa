@@ -206,6 +206,7 @@ impl Game {
     /// A full serializable snapshot plus the replay log (DESIGN.md §4.10).
     pub fn snapshot(&self, input_log: Vec<Input>) -> Save {
         Save {
+            version: crate::save::SAVE_VERSION,
             seed: self.seed,
             tick: self.tick,
             player: self.player.clone(),
