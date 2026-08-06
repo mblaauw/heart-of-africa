@@ -19,7 +19,7 @@ use crate::sim::clock::Tick;
 use crate::sim::clues::{ClueGenerator, ClueGraph, GeneratorInput, SpatialHint};
 use crate::sim::economy::{Goods, Market, MarketEntry, season_factor};
 use crate::sim::events;
-use crate::sim::player::{Direction, Player};
+use crate::sim::player::{Direction, EquipmentSlot, Player};
 use crate::sim::rivals;
 use crate::sim::survival::Survival;
 use crate::world::{GiftPrefState, Settlement, World};
@@ -206,6 +206,21 @@ impl Game {
             Input::Travel(route_id) => self.apply_travel(route_id, world),
             Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
             Input::SearchArea => Vec::new(),
+            Input::Equip(slot, item) => {
+                if self.player.equipment.equip(*slot, item) {
+                    vec![format!("Equipped {item}.")]
+                } else {
+                    vec![format!("Cannot equip {item} — not in pack.")]
+                }
+            }
+            Input::Unequip(slot) => {
+                let item = self.player.equipment.unequip(*slot);
+                if item {
+                    vec!["Unequipped.".to_string()]
+                } else {
+                    vec!["Nothing to unequip.".to_string()]
+                }
+            }
         };
         // The daily director: rivals move and consume exclusives — exactly
         // once per crossed day (DESIGN.md §4.8). Weather and market drift
@@ -280,8 +295,15 @@ impl Game {
         }
         // One tile costs its biome's movement cost in in-game hours (the
         // data's costs are real: floodplain 2, mountain 3, open ground 1).
+        // Equipment reduces cost: rope→mountain, machete→savanna (WS4).
         let (x, y) = self.player.pos();
-        let cost = world.grid.movement_cost_at(x, y) as u64;
+        let base = world.grid.movement_cost_at(x, y);
+        let tool = self.player.equipment.equipped(EquipmentSlot::Tool);
+        let cost = match tool {
+            Some("rope") if base == 3.0 => 2.0,
+            Some("machete") if base == 2.0 => 1.0,
+            _ => base,
+        } as u64;
         for _ in 0..cost {
             self.advance_travel(world);
         }

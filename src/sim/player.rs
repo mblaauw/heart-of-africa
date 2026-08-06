@@ -4,7 +4,7 @@
 //! The visited list is the fog-of-war record: unique tiles in first-visit
 //! order, deterministic by construction.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +45,68 @@ impl Direction {
     }
 }
 
+/// Equipment a player can equip (WS4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum EquipmentSlot {
+    Tool,       // shovel, rope, machete
+    Vessel,     // canoe, felucca
+    Camp,       // tent
+    Survey,     // map kit
+    TravelTool, // canteen
+}
+
+/// Equipment carried and equipped by the player.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Equipment {
+    /// What is equipped in each slot (None = empty).
+    pub slots: BTreeMap<EquipmentSlot, String>,
+    /// What the player is carrying but not wearing.
+    pub pack: BTreeSet<String>,
+}
+
+impl Equipment {
+    /// Whether a shovel is equipped (gates excavation, WS3).
+    pub fn has_shovel(&self) -> bool {
+        self.slots.get(&EquipmentSlot::Tool).map(|s| s.as_str()) == Some("shovel")
+    }
+
+    /// Item equipped in a slot, if any.
+    pub fn equipped(&self, slot: EquipmentSlot) -> Option<&str> {
+        self.slots.get(&slot).map(|s| s.as_str())
+    }
+
+    /// Equip an item from the pack to a slot.
+    pub fn equip(&mut self, slot: EquipmentSlot, item: &str) -> bool {
+        if self.pack.remove(item) {
+            if let Some(old) = self.slots.insert(slot, item.to_string()) {
+                self.pack.insert(old);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Unequip a slot, returning the item to the pack.
+    pub fn unequip(&mut self, slot: EquipmentSlot) -> bool {
+        if let Some(item) = self.slots.remove(&slot) {
+            self.pack.insert(item);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Movement cost modifier from equipment.
+    pub fn movement_cost_factor(&self, biome: &str) -> f64 {
+        match self.equipped(EquipmentSlot::Tool) {
+            Some("rope") if biome == "mountain" => 0.5,
+            Some("machete") if biome == "savanna" => 0.5,
+            _ => 1.0,
+        }
+    }
+}
+
 /// The expedition's position on the tile map.
 ///
 /// Invariant: the position is always on a passable tile; `try_move` is the
@@ -59,6 +121,8 @@ pub struct Player {
     money: u32,
     /// Carried items by goods ID.
     items: BTreeMap<String, u32>,
+    /// Equipped items and pack (WS4).
+    pub equipment: Equipment,
 }
 
 impl Player {
@@ -71,6 +135,7 @@ impl Player {
             visited: vec![(x, y)],
             money: 0,
             items: BTreeMap::new(),
+            equipment: Equipment::default(),
         }
     }
 

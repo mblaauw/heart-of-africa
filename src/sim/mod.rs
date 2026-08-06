@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dialogue::npc::Effect;
 
-use player::Direction;
+use player::{Direction, EquipmentSlot};
 
 /// A player input, recorded in application order for replay (DESIGN.md §9).
 /// Replays must be byte-identical: a save plus its input log is the whole
@@ -52,4 +52,8 @@ pub enum Input {
     LlmAction { npc_id: String, effect: Effect },
     /// Narrow the search radius for treasure (WS3).
     SearchArea,
+    /// Equip an item to a slot (WS4).
+    Equip(EquipmentSlot, String),
+    /// Unequip a slot (WS4).
+    Unequip(EquipmentSlot),
 }
