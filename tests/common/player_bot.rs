@@ -10,6 +10,8 @@
 //! State lives here (target settlement, worked residents, explored places),
 //! because "what have I tried" is player memory, not game data.
 
+use std::collections::BTreeSet;
+
 use heart_of_africa::sim::Input;
 use heart_of_africa::sim::clues::{CompassRelation, DistanceBand, relation_between};
 use heart_of_africa::sim::game::{Game, GameStatus};
@@ -37,6 +39,9 @@ pub struct PlayerBot {
     gifts: usize,
     /// The tomb search parsed from the location clue's prose (WS2).
     tomb_scan: Option<TombScan>,
+    /// Gift items the player has learned are disliked in the current region
+    /// (from diary entries like "must dislike beads").
+    disliked_gifts: BTreeSet<String>,
 }
 
 /// The tomb search a player would run from the location clue's text:
@@ -182,6 +187,14 @@ impl PlayerBot {
         }
         let here = game.settlement_at(world).map(|s| s.id.clone());
         for text in &new {
+            // WS2: learn regional gift preferences from diary.
+            if let Some(dislike) = text
+                .split("must dislike ")
+                .nth(1)
+                .and_then(|rest| rest.split('.').next())
+            {
+                self.disliked_gifts.insert(dislike.to_string());
+            }
             if !text.starts_with("Clue recorded") {
                 continue;
             }
@@ -252,7 +265,7 @@ impl PlayerBot {
             self.gifts = 0;
             return Some(Input::Talk(npc_id.clone(), talk.options.len()));
         }
-        if self.gifts >= 2 {
+        if self.gifts >= 3 {
             // Two gifts and still no question: nothing more to unlock here.
             self.residents_done.push(npc_id.clone());
             self.gifts = 0;

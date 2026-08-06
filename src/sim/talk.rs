@@ -5,7 +5,7 @@
 use crate::dialogue::npc::{Effect, Npc};
 use crate::dialogue::{Conversation, GameSnapshot};
 use crate::sim::clues::Clue;
-use crate::world::World;
+use crate::world::{GiftPrefState, World};
 
 use super::game::{Game, TalkScreen};
 
@@ -103,6 +103,43 @@ impl Game {
                 None => return Vec::new(),
             }
         };
+
+        // Social preferences (WS2): regional gift culture modifies the
+        // rep impact. Giving a disliked gift without knowing the taboo is
+        // a small penalty that reveals the preference; a known violation
+        // carries the full authored penalty.
+        let effect = {
+            let mut e = effect;
+            if let Some(ref gift_item) = e.take_item
+                && let Some(settlement) = world.settlement(&npc.settlement)
+                && let Some(region_id) = world.region_containing(settlement.x, settlement.y)
+                && let Some(knowledge) = world.knowledges.get(region_id)
+                && knowledge.disliked_gifts.contains(gift_item)
+            {
+                let pref = self.preferences.get(region_id).copied().unwrap_or_default();
+                match pref {
+                    GiftPrefState::Unknown => {
+                        // Unknown taboo: small penalty, learn the preference.
+                        e.rep_delta = e.rep_delta.map(|d| (d as f64 * 0.5) as i32);
+                        self.preferences
+                            .insert(region_id.to_string(), GiftPrefState::Rumored);
+                        events.push(format!(
+                            "That was poorly received — {} must dislike {}. I'll remember that.",
+                            settlement.name, gift_item
+                        ));
+                    }
+                    GiftPrefState::Rumored => {
+                        // Heard the warning but tested it anyway.
+                        e.rep_delta = e.rep_delta.map(|d| (d as f64 * 0.5) as i32);
+                    }
+                    GiftPrefState::Confirmed => {
+                        // Knowing violation: full penalty (unwrap_or default).
+                    }
+                }
+            }
+            e
+        };
+
         events.extend(self.apply_effect(&effect, &npc));
         if ended {
             self.conversation = None;

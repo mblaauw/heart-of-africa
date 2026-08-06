@@ -138,4 +138,16 @@ impl World {
     pub fn settlement(&self, id: &str) -> Option<&Settlement> {
         self.settlements.iter().find(|s| s.id == id)
     }
+
+    /// Which region contains this tile (point-in-polygon test).
+    pub fn region_containing(&self, x: u32, y: u32) -> Option<&str> {
+        let p = geo::KmPoint::new(
+            (x as f64 + 0.5) * KM_PER_CELL,
+            (y as f64 + 0.5) * KM_PER_CELL,
+        );
+        self.regions
+            .iter()
+            .find(|r| r.polygon.contains(p))
+            .map(|r| r.id.as_str())
+    }
 }
