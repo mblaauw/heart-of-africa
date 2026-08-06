@@ -1,0 +1,63 @@
+# Region knowledge for Lower Egypt & the Nile (EXPANSION_PLAN §WS2).
+# Direction/distance terms, gift culture, terrain lore, landmark terms,
+# and etiquette facts — one file per region. A typo here fails
+# `cargo test` (content lint), the same guardrail as other content files.
+
+version = 1
+
+# The region id this knowledge attaches to (matches World.regions[].id).
+region = "lower-egypt-nile"
+
+# Direction terms the region's people use (replaces default compass terms).
+direction_terms = [
+  "upstream",
+  "downstream",
+  "toward the river",
+  "inland",
+]
+
+# Distance terms (replaces default distance-band phrases).
+distance_terms = [
+  "a short walk",
+  "half a day's march",
+  "a full day's ride",
+  "two days' march",
+  "a long journey",
+]
+
+# Gifts that earn goodwill in this region.
+preferred_gifts = [
+  "coffee",
+  "tobacco",
+]
+
+# Gifts that are offensive in this region.
+disliked_gifts = [
+  "beads",
+]
+
+# Terrain lore fragments: the landmarks, hazards, and geography a local
+# would mention in casual conversation.
+terrain_lore = [
+  "the quarries above Aswan",
+  "the red hills east of the floodplain",
+  "the black earth where the Nile recedes",
+  "the First Cataract",
+  "the desert track to Kharga",
+]
+
+# Landmark terms: the names people use for prominent features.
+landmark_terms = [
+  "the old quarry",
+  "the river bend",
+  "the king's crossing",
+  "the western ridge",
+  "the southern well",
+]
+
+# Etiquette facts: a visitor who knows these avoids offense.
+etiquette = [
+  "Always accept coffee when offered — refusal is a grave insult.",
+  "Never show the soles of your feet when seated.",
+  "Bargaining is expected; paying the first price marks you as soft.",
+]

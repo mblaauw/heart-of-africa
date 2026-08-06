@@ -12,7 +12,7 @@ use crate::sim::economy::{Category, Goods, Market, MarketEntry};
 use crate::sim::game::GameContent;
 use crate::sim::survival::Ailment;
 use crate::world::biome::{BiomeDef, BiomeGrid, parse_hex_color};
-use crate::world::{River, Route, Settlement, World};
+use crate::world::{RegionKnowledge, River, Route, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
 pub const WORLD_FILE: &str = "world.toml";
@@ -46,6 +46,9 @@ pub const GEOGRAPHY_FILE: &str = "geography.toml";
 
 /// Current geography format version; `geography.toml` must declare it.
 pub const GEOGRAPHY_VERSION: u32 = 1;
+
+/// Directory of per-region knowledge files, under the content directory.
+pub const REGIONS_DIR: &str = "regions";
 
 #[derive(serde::Deserialize)]
 struct WorldToml {
@@ -386,6 +389,7 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         routes,
         regions,
         landmarks,
+        knowledges: load_region_knowledge(content_dir)?,
         start_settlement: raw.region.start_settlement,
     })
 }
@@ -772,6 +776,73 @@ fn check_version(file: &str, version: u32) -> Result<()> {
     Ok(())
 }
 
+/// TOML shape for a single region-knowledge file under `regions/`.
+#[derive(serde::Deserialize)]
+struct RegionKnowledgeToml {
+    version: u32,
+    region: String,
+    #[serde(default)]
+    direction_terms: Vec<String>,
+    #[serde(default)]
+    distance_terms: Vec<String>,
+    #[serde(default)]
+    preferred_gifts: Vec<String>,
+    #[serde(default)]
+    disliked_gifts: Vec<String>,
+    #[serde(default)]
+    terrain_lore: Vec<String>,
+    #[serde(default)]
+    landmark_terms: Vec<String>,
+    #[serde(default)]
+    etiquette: Vec<String>,
+}
+
+/// Load per-region knowledge files from `content/regions/`.
+/// Empty when the directory is absent (graceful — regional knowledge is
+/// additive). A malformed file or a reference to a missing region id is a
+/// content-lint error.
+pub fn load_region_knowledge(content_dir: &Path) -> Result<BTreeMap<String, RegionKnowledge>> {
+    let dir = content_dir.join(REGIONS_DIR);
+    if !dir.is_dir() {
+        return Ok(BTreeMap::new());
+    }
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .with_context(|| format!("reading {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "toml"))
+        .collect();
+    entries.sort(); // deterministic load order
+    let mut knowledges = BTreeMap::new();
+    for path in entries {
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let raw: RegionKnowledgeToml =
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        if raw.version != CONTENT_VERSION {
+            anyhow::bail!(
+                "{} declares version {}, expected {}",
+                path.display(),
+                raw.version,
+                CONTENT_VERSION
+            );
+        }
+        knowledges.insert(
+            raw.region.clone(),
+            RegionKnowledge {
+                direction_terms: raw.direction_terms,
+                distance_terms: raw.distance_terms,
+                preferred_gifts: raw.preferred_gifts,
+                disliked_gifts: raw.disliked_gifts,
+                terrain_lore: raw.terrain_lore,
+                landmark_terms: raw.landmark_terms,
+                etiquette: raw.etiquette,
+            },
+        );
+    }
+    Ok(knowledges)
+}
+
 /// Biome definitions must satisfy: passable biomes cost >= 1.0, impassable
 /// biomes cost 0.0. Violations are content-lint errors.
 fn validate_biome(def: &BiomeDef) -> Result<()> {
@@ -821,5 +892,20 @@ mod tests {
             color: (0xd9, 0xb3, 0x6c),
         };
         assert!(validate_biome(&bad).is_err());
+    }
+
+    #[test]
+    fn region_knowledge_loads_from_toml() {
+        let dir = std::env::current_dir().unwrap().join("content");
+        let knowledges = load_region_knowledge(&dir).unwrap();
+        assert!(
+            knowledges.contains_key("lower-egypt-nile"),
+            "nile region knowledge must load: keys {:?}",
+            knowledges.keys().collect::<Vec<_>>()
+        );
+        let k = &knowledges["lower-egypt-nile"];
+        assert!(!k.direction_terms.is_empty());
+        assert!(!k.preferred_gifts.contains(&"beads".to_string()));
+        assert!(k.disliked_gifts.contains(&"beads".to_string()));
     }
 }

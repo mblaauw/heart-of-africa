@@ -9,6 +9,8 @@ pub mod pathfind;
 
 pub use coords::KM_PER_CELL;
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// A named settlement: a tile position plus its 1890s polity (DESIGN.md §3.2).
@@ -78,6 +80,21 @@ pub struct Landmark {
     pub point: geo::KmPoint,
 }
 
+/// Regional vocabulary and social knowledge (EXPANSION_PLAN §WS2): the
+/// direction and distance terms a region's people use, preferred and
+/// disliked gifts, terrain lore, landmark terms, and etiquette facts.
+/// Loaded from `content/regions/*.toml` — one file per region.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RegionKnowledge {
+    pub direction_terms: Vec<String>,
+    pub distance_terms: Vec<String>,
+    pub preferred_gifts: Vec<String>,
+    pub disliked_gifts: Vec<String>,
+    pub terrain_lore: Vec<String>,
+    pub landmark_terms: Vec<String>,
+    pub etiquette: Vec<String>,
+}
+
 /// The loaded macro-geography of one region (DESIGN.md §3.1): the biome grid
 /// plus named settlements, rivers, routes, regions, and landmarks.
 #[derive(Debug, Clone)]
@@ -90,6 +107,8 @@ pub struct World {
     pub routes: Vec<Route>,
     pub regions: Vec<Region>,
     pub landmarks: Vec<Landmark>,
+    /// Regional vocabulary and social knowledge, keyed by region id.
+    pub knowledges: BTreeMap<String, RegionKnowledge>,
     /// ID of the settlement where the expedition begins.
     pub start_settlement: String,
 }
