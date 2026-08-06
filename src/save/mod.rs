@@ -60,6 +60,8 @@ pub struct Save {
     pub known_labels: BTreeSet<String>,
     /// Regional gift preference knowledge (WS2 social preferences).
     pub preferences: BTreeMap<String, GiftPrefState>,
+    /// Discovered treasure site IDs (WS3).
+    pub treasures_found: BTreeSet<String>,
     pub status: GameStatus,
     /// Ordered player inputs, in application order (the replay log).
     pub input_log: Vec<Input>,
@@ -128,6 +130,7 @@ mod tests {
             explored_sectors: BTreeSet::new(),
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
+            treasures_found: BTreeSet::new(),
             status: GameStatus::Playing,
             diary: Vec::new(),
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],

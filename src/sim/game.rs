@@ -114,6 +114,8 @@ pub struct Game {
     /// Regional gift preference knowledge: region id → preference state
     /// (WS2 social preferences — Unknown → Rumored → Confirmed).
     pub preferences: BTreeMap<String, GiftPrefState>,
+    /// Discovered treasure site IDs (WS3).
+    pub treasures_found: BTreeSet<String>,
     /// Active conversation, if any.
     pub conversation: Option<Conversation>,
     /// The generated mystery of this run.
@@ -147,6 +149,7 @@ impl Game {
             explored_sectors: BTreeSet::new(),
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
+            treasures_found: BTreeSet::new(),
             conversation: None,
             graph,
             content,
@@ -173,6 +176,7 @@ impl Game {
             explored_sectors: save.explored_sectors,
             known_labels: save.known_labels,
             preferences: save.preferences.clone(),
+            treasures_found: save.treasures_found.clone(),
             conversation: None,
             graph,
             content,
@@ -201,6 +205,7 @@ impl Game {
             Input::Retrieve(id) => self.apply_retrieve(id),
             Input::Travel(route_id) => self.apply_travel(route_id, world),
             Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
+            Input::SearchArea => Vec::new(),
         };
         // The daily director: rivals move and consume exclusives — exactly
         // once per crossed day (DESIGN.md §4.8). Weather and market drift
@@ -237,6 +242,7 @@ impl Game {
             explored_sectors: self.explored_sectors.clone(),
             known_labels: self.known_labels.clone(),
             preferences: self.preferences.clone(),
+            treasures_found: self.treasures_found.clone(),
             status: self.status.clone(),
             input_log,
         }

@@ -50,4 +50,6 @@ pub enum Input {
     /// scripted-tree effects, recorded like any other input so replays stay
     /// byte-identical with the LLM on (§9). Re-validated on apply.
     LlmAction { npc_id: String, effect: Effect },
+    /// Narrow the search radius for treasure (WS3).
+    SearchArea,
 }

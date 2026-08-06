@@ -196,6 +196,24 @@ pub enum HintTarget {
     Tomb,
 }
 
+/// A treasure site: a hidden cache at a specific world position, discovered
+/// through narrowing search inputs and finally excavated (WS3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TreasureSite {
+    pub id: String,
+    /// Tile position of the treasure.
+    pub tile: (u32, u32),
+    /// The item to find.
+    pub treasure_item: String,
+    /// Whether a shovel is required to excavate.
+    pub requires_shovel: bool,
+    /// Search radius stages in tiles: after obtaining stage-N clues, the
+    /// search area shrinks to this radius (0 = exact tile required).
+    pub radius_stages: Vec<u32>,
+    /// Provenance text for the diary.
+    pub provenance: String,
+}
+
 /// The semantic content behind a location clue (EXPANSION_PLAN §WS2): the
 /// text a player reads is a faithful render of this struct. Search sectors
 /// derive from it, so solvability operates on semantics only.
@@ -253,6 +271,8 @@ pub struct ClueGraph {
     /// The semantic content the location clue names (None for synthetic
     /// test graphs that skip the generator).
     pub spatial_hint: Option<SpatialHint>,
+    /// Treasure sites generated for this seed (WS3).
+    pub treasures: Vec<TreasureSite>,
     /// Settlement role order [start, mid1, mid2, end]: the rivals' circuit.
     pub settlement_order: Vec<String>,
     /// Display names of the graph settlements (for texts and rumors).
@@ -610,6 +630,7 @@ impl<'a> ClueGenerator<'a> {
             start_clue: "c1".into(),
             location_clue,
             spatial_hint: Some(spatial_hint),
+            treasures: Vec::new(), // WS3: populated when treasure content is authored
             settlement_order: settlements.clone(),
             settlement_display: display_of,
         };
@@ -798,6 +819,7 @@ mod tests {
             start_clue: "c1".into(),
             location_clue: "c5".into(),
             spatial_hint: None,
+            treasures: Vec::new(),
             settlement_order: vec!["cairo".into()],
             settlement_display: BTreeMap::new(),
         }
