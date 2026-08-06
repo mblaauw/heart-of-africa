@@ -62,6 +62,10 @@ pub struct Save {
     pub preferences: BTreeMap<String, GiftPrefState>,
     /// Discovered treasure site IDs (WS3).
     pub treasures_found: BTreeSet<String>,
+    /// Expedition start year (WS3 mandate deadline).
+    pub start_year: u16,
+    /// Mandate duration in years (WS3).
+    pub mandate_years: u16,
     pub status: GameStatus,
     /// Ordered player inputs, in application order (the replay log).
     pub input_log: Vec<Input>,
@@ -131,6 +135,8 @@ mod tests {
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
             treasures_found: BTreeSet::new(),
+            start_year: 1890,
+            mandate_years: 5,
             status: GameStatus::Playing,
             diary: Vec::new(),
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],

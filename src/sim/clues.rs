@@ -10,8 +10,8 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use rand::RngExt;
 use rand::seq::SliceRandom;
+use rand::RngExt;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::dialogue::npc::Npc;
 use crate::sim::economy::Goods;
 use crate::world::geo::tile_distance_km;
-use crate::world::{KM_PER_CELL, World};
+use crate::world::{World, KM_PER_CELL};
 
 /// Clue node kinds (DESIGN.md §4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -617,6 +617,57 @@ impl<'a> ClueGenerator<'a> {
         let location_clue = c5.id.clone();
         clues.insert(c5.id.clone(), c5);
 
+        // WS3: generate 4–6 treasure sites from passable tiles not occupied
+        // by settlements. Each gets an item from the goods catalog.
+        let treasure_items = ["coffee", "gold_dust", "beads", "salt", "cloth", "dates"];
+        let treasure_count = 4 + (self.seed % 3) as usize; // 4–6
+        let treasure_tiles: Vec<(u32, u32)> = self
+            .input
+            .tomb_candidates
+            .iter()
+            .copied()
+            .filter(|(x, y)| {
+                // Exclude tiles with settlements so treasures don't spawn inside towns.
+                !self
+                    .world
+                    .settlements
+                    .iter()
+                    .any(|s| s.x == *x && s.y == *y)
+            })
+            .collect();
+        // Deterministic shuffle: use a multiplicative hash on seed to pick
+        // tiles in a stable order per seed, then take the first N.
+        let mut hashes: Vec<(u64, (u32, u32))> = treasure_tiles
+            .iter()
+            .enumerate()
+            .map(|(i, &tile)| {
+                let h = self
+                    .seed
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    .wrapping_add(i as u64)
+                    .rotate_left(17);
+                (h, tile)
+            })
+            .collect();
+        hashes.sort_by_key(|(h, _)| *h);
+        let mut treasures = Vec::new();
+        for (i, &(_hash, tile)) in hashes
+            .iter()
+            .take(treasure_count.min(hashes.len()))
+            .enumerate()
+        {
+            let item_idx =
+                (self.seed.wrapping_add(i as u64 * 0x7C15)) as usize % treasure_items.len();
+            treasures.push(TreasureSite {
+                id: format!("t{}", i + 1),
+                tile,
+                treasure_item: treasure_items[item_idx].to_string(),
+                requires_shovel: i % 2 == 0,
+                radius_stages: vec![10, 5, 1, 0],
+                provenance: "An old cache buried long ago.".to_string(),
+            });
+        }
+
         let graph = ClueGraph {
             clues,
             expedition: Expedition { tomb_tile },
@@ -630,7 +681,7 @@ impl<'a> ClueGenerator<'a> {
             start_clue: "c1".into(),
             location_clue,
             spatial_hint: Some(spatial_hint),
-            treasures: Vec::new(), // WS3: populated when treasure content is authored
+            treasures,
             settlement_order: settlements.clone(),
             settlement_display: display_of,
         };

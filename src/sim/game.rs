@@ -121,6 +121,10 @@ pub struct Game {
     /// The generated mystery of this run.
     pub graph: ClueGraph,
     pub content: GameContent,
+    /// Expedition start year (mandate deadline tracking, WS3).
+    pub start_year: u16,
+    /// Mandate duration in years (config-driven, default 5).
+    pub mandate_years: u16,
 }
 
 impl Game {
@@ -153,6 +157,8 @@ impl Game {
             conversation: None,
             graph,
             content,
+            start_year: 1890,
+            mandate_years: 5,
         }
     }
 
@@ -180,6 +186,8 @@ impl Game {
             conversation: None,
             graph,
             content,
+            start_year: save.start_year,
+            mandate_years: save.mandate_years,
         }
     }
 
@@ -206,6 +214,7 @@ impl Game {
             Input::Travel(route_id) => self.apply_travel(route_id, world),
             Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
             Input::SearchArea => Vec::new(),
+            Input::Excavate => self.apply_excavate(world),
             Input::Equip(slot, item) => {
                 if self.player.equipment.equip(*slot, item) {
                     vec![format!("Equipped {item}.")]
@@ -258,6 +267,8 @@ impl Game {
             known_labels: self.known_labels.clone(),
             preferences: self.preferences.clone(),
             treasures_found: self.treasures_found.clone(),
+            start_year: self.start_year,
+            mandate_years: self.mandate_years,
             status: self.status.clone(),
             input_log,
         }
@@ -343,6 +354,12 @@ impl Game {
 
     /// Shared post-movement bookkeeping: glossary, death, tomb discovery, win checks.
     pub(crate) fn after_movement(&mut self, world: &World) {
+        // WS3: mandate deadline — the expedition must complete its mission
+        // before the mandate expires.
+        if self.tick.year() >= self.mandate_years as u64 {
+            self.die("has run out of time — the mandate expired".to_string());
+            return;
+        }
         if self.settlement_at(world).is_some()
             && self.known_labels.is_empty()
             && !world.knowledges.is_empty()
@@ -557,6 +574,28 @@ impl Game {
         }
         self.after_movement(world);
         vec![format!("Used 1 {}.", goods.name)]
+    }
+
+    /// Excavate at the current tile for treasure (WS3). Returns a dig result.
+    fn apply_excavate(&mut self, _world: &World) -> Vec<String> {
+        let (x, y) = self.player.pos();
+        for site in &self.graph.treasures {
+            if site.tile == (x, y) && !self.treasures_found.contains(&site.id) {
+                let has_tool = !site.requires_shovel || self.player.equipment.has_shovel();
+                if !has_tool {
+                    return vec!["You need a shovel to dig here.".to_string()];
+                }
+                self.treasures_found.insert(site.id.clone());
+                self.player.add_item(&site.treasure_item);
+                let goods = self.content.goods(&site.treasure_item);
+                let name = goods.map_or(site.treasure_item.clone(), |g| g.name.clone());
+                return vec![format!(
+                    "You excavate and find: {name}! {}",
+                    site.provenance
+                )];
+            }
+        }
+        vec!["You dig but find nothing of value here.".to_string()]
     }
 
     /// Apply a validated LLM action (DESIGN.md §6.4). Re-validated on apply

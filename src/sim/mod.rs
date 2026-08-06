@@ -52,6 +52,8 @@ pub enum Input {
     LlmAction { npc_id: String, effect: Effect },
     /// Narrow the search radius for treasure (WS3).
     SearchArea,
+    /// Excavate at current position for treasure (WS3).
+    Excavate,
     /// Equip an item to a slot (WS4).
     Equip(EquipmentSlot, String),
     /// Unequip a slot (WS4).

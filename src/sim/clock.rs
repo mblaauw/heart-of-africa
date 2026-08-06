@@ -57,6 +57,12 @@ impl Tick {
         self.0 % Self::HOURS_PER_DAY
     }
 
+    /// Approximate in-game calendar year (WS3). The expedition begins in
+    /// January; year 0 = game start (1890 in-fiction).
+    pub fn year(self) -> u64 {
+        (self.day() - 1) / 365
+    }
+
     /// True when the hour-of-day is in daylight (06:00 through 17:59).
     pub fn is_daylight(self) -> bool {
         (6..18).contains(&self.hour_of_day())
