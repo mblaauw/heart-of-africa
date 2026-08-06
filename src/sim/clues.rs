@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::dialogue::npc::Npc;
 use crate::sim::economy::Goods;
-use crate::world::World;
+use crate::world::geo::tile_distance_km;
+use crate::world::{KM_PER_CELL, World};
 
 /// Clue node kinds (DESIGN.md §4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +72,170 @@ pub struct Expedition {
     pub tomb_tile: (u32, u32),
 }
 
+/// Eight-compass relation between two tiles (grid: +x east, +y south).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompassRelation {
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    South,
+    SouthWest,
+    West,
+    NorthWest,
+}
+
+impl CompassRelation {
+    pub fn phrase(self) -> &'static str {
+        match self {
+            CompassRelation::North => "north",
+            CompassRelation::NorthEast => "northeast",
+            CompassRelation::East => "east",
+            CompassRelation::SouthEast => "southeast",
+            CompassRelation::South => "south",
+            CompassRelation::SouthWest => "southwest",
+            CompassRelation::West => "west",
+            CompassRelation::NorthWest => "northwest",
+        }
+    }
+}
+
+/// The octant (45° wedge) of `to` as seen from `from`.
+pub fn relation_between(from: (u32, u32), to: (u32, u32)) -> CompassRelation {
+    let dx = to.0 as f64 - from.0 as f64;
+    let dy = to.1 as f64 - from.1 as f64;
+    // atan2(y, x): 0 = east, π/2 = south, ±π = west, -π/2 = north.
+    let angle = dy.atan2(dx);
+    match (angle * 8.0 / std::f64::consts::TAU).round() as i64 {
+        0 | 8 => CompassRelation::East,
+        1 => CompassRelation::SouthEast,
+        2 => CompassRelation::South,
+        3 => CompassRelation::SouthWest,
+        4 | -4 => CompassRelation::West,
+        -3 => CompassRelation::NorthWest,
+        -2 => CompassRelation::North,
+        -1 => CompassRelation::NorthEast,
+        _ => CompassRelation::East, // unreachable; atan2 output is bounded
+    }
+}
+
+/// How far a hint claims the tomb is from its origin, in marching days.
+/// Band boundaries are kilometres (see `from_km`); the same table drives
+/// the players' search sectors, so hint and gameplay always agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DistanceBand {
+    ShortWalk,
+    HalfDay,
+    OneDay,
+    TwoDays,
+    LongJourney,
+}
+
+impl DistanceBand {
+    /// Band boundaries, km. A march day ≈ 8 walking tiles ≈ 265 km; bands
+    /// are coarse so a hint never overclaims precision.
+    const KM_LIMITS: [f64; 4] = [100.0, 250.0, 500.0, 1000.0];
+
+    pub fn from_km(km: f64) -> DistanceBand {
+        // Partitions: [0,100) [100,250) [250,500) [500,1000] (1000,∞).
+        // A band's lower limit belongs to the higher band, so a hint never
+        // overclaims at the boundary.
+        let limits = DistanceBand::KM_LIMITS;
+        if km < limits[0] {
+            DistanceBand::ShortWalk
+        } else if km < limits[1] {
+            DistanceBand::HalfDay
+        } else if km < limits[2] {
+            DistanceBand::OneDay
+        } else if km <= limits[3] {
+            DistanceBand::TwoDays
+        } else {
+            DistanceBand::LongJourney
+        }
+    }
+
+    /// Inclusive km range of the band: [min, max].
+    pub fn km_range(&self) -> (f64, f64) {
+        let idx = match self {
+            DistanceBand::ShortWalk => 0,
+            DistanceBand::HalfDay => 1,
+            DistanceBand::OneDay => 2,
+            DistanceBand::TwoDays => 3,
+            DistanceBand::LongJourney => 4,
+        };
+        let min = if idx == 0 {
+            0.0
+        } else {
+            DistanceBand::KM_LIMITS[idx - 1]
+        };
+        let max = if idx == 4 {
+            f64::INFINITY
+        } else {
+            DistanceBand::KM_LIMITS[idx]
+        };
+        (min, max)
+    }
+
+    pub fn phrase(self) -> &'static str {
+        match self {
+            DistanceBand::ShortWalk => "a short walk",
+            DistanceBand::HalfDay => "half a day's march",
+            DistanceBand::OneDay => "a day's march",
+            DistanceBand::TwoDays => "two days' march",
+            DistanceBand::LongJourney => "a long journey",
+        }
+    }
+}
+
+/// What a spatial hint points at (WS3 adds treasure sites and landmarks).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HintTarget {
+    Tomb,
+}
+
+/// The semantic content behind a location clue (EXPANSION_PLAN §WS2): the
+/// text a player reads is a faithful render of this struct. Search sectors
+/// derive from it, so solvability operates on semantics only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpatialHint {
+    /// Origin anchor: a settlement id (landmarks join in the regions
+    /// milestone).
+    pub origin: String,
+    pub relation: CompassRelation,
+    pub band: DistanceBand,
+    /// How strongly the hint is phrased (0.75–0.95; WS3 search feedback).
+    pub confidence: f64,
+    pub target: HintTarget,
+}
+
+impl SpatialHint {
+    /// The anchor tile the hint is measured from.
+    pub fn origin_tile(&self, world: &World) -> Option<(u32, u32)> {
+        let s = world.settlement(&self.origin)?;
+        Some((s.x, s.y))
+    }
+
+    /// Whether `tile` lies in the claimed search sector: the octant wedge
+    /// at the claimed distance band, measured from the origin anchor.
+    pub fn sector_contains(&self, world: &World, tile: (u32, u32)) -> bool {
+        let Some(origin) = self.origin_tile(world) else {
+            return false;
+        };
+        if tile == origin {
+            return false;
+        }
+        if relation_between(origin, tile) != self.relation {
+            return false;
+        }
+        let km = tile_distance_km(origin, tile, KM_PER_CELL);
+        let (min, max) = self.band.km_range();
+        km >= min && km <= max
+    }
+}
+
 /// A generated mystery: the clue nodes plus the win condition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClueGraph {
@@ -82,6 +247,9 @@ pub struct ClueGraph {
     /// The start hint and the location clue.
     pub start_clue: String,
     pub location_clue: String,
+    /// The semantic content the location clue names (None for synthetic
+    /// test graphs that skip the generator).
+    pub spatial_hint: Option<SpatialHint>,
     /// Settlement role order [start, mid1, mid2, end]: the rivals' circuit.
     pub settlement_order: Vec<String>,
     /// Display names of the graph settlements (for texts and rumors).
@@ -182,6 +350,7 @@ pub struct GeneratorInput {
 /// the graph itself.
 pub struct ClueGenerator<'a> {
     rng: ChaCha20Rng,
+    seed: u64,
     input: &'a GeneratorInput,
     world: &'a World,
     npcs: &'a BTreeMap<String, Npc>,
@@ -198,6 +367,7 @@ impl<'a> ClueGenerator<'a> {
         seed_bytes[..8].copy_from_slice(&seed.to_le_bytes());
         ClueGenerator {
             rng: ChaCha20Rng::from_seed(seed_bytes),
+            seed,
             input,
             world,
             npcs,
@@ -281,6 +451,8 @@ impl<'a> ClueGenerator<'a> {
                     &display_of[text_at],
                     &npc_name_of[text_at],
                     &key_name,
+                    "",
+                    "",
                 ),
                 red_herring: herring,
                 contradicts_herring: contradicts.map(str::to_string),
@@ -361,25 +533,14 @@ impl<'a> ClueGenerator<'a> {
         );
 
         // Location clue at the end settlement, fed by EITHER leg (OR-prereq).
-        let c5 = clue(
-            "c5",
-            ClueKind::Location,
-            &end_id,
-            &end_id,
-            Vec::new(),
-            vec![e2.id.clone(), f2.id.clone()],
-            c5_gate,
-            None,
-            None,
-            false,
-            None,
-        );
-        let location_clue = c5.id.clone();
+        // Built after `pick_tomb` so its text can carry the spatial hint
+        // computed from real geometry (EXPANSION_PLAN §WS2 milestone 1).
+        let e2_id = e2.id.clone();
+        let f2_id = f2.id.clone();
         clues.insert(e1.id.clone(), e1);
         clues.insert(e2.id.clone(), e2);
         clues.insert(f1.id.clone(), f1);
         clues.insert(f2.id.clone(), f2);
-        clues.insert(c5.id.clone(), c5);
 
         // Red herrings: falsifiable by obtaining e2 (the leg-A corroboration).
         for (i, settlement) in herring_settlements.iter().enumerate() {
@@ -400,6 +561,34 @@ impl<'a> ClueGenerator<'a> {
         }
 
         let tomb_tile = self.pick_tomb();
+        let spatial_hint = self.hint_for_tomb(tomb_tile, &settlements);
+        let c5 = Clue {
+            id: "c5".to_string(),
+            kind: ClueKind::Location,
+            settlement: end_id.clone(),
+            npc: npc_of[&end_id].clone(),
+            rep_gate: c5_gate,
+            prereq: Vec::new(),
+            prereq_any: vec![e2_id, f2_id],
+            gives_item: None,
+            requires_item: None,
+            text: {
+                let template = self.pick_template(ClueKind::Location, false);
+                self.render(
+                    template,
+                    &display_of[&spatial_hint.origin],
+                    &npc_name_of[&end_id],
+                    &key_name,
+                    spatial_hint.relation.phrase(),
+                    spatial_hint.band.phrase(),
+                )
+            },
+            red_herring: false,
+            contradicts_herring: None,
+        };
+        let location_clue = c5.id.clone();
+        clues.insert(c5.id.clone(), c5);
+
         let graph = ClueGraph {
             clues,
             expedition: Expedition { tomb_tile },
@@ -412,6 +601,7 @@ impl<'a> ClueGenerator<'a> {
             leg_b: vec![start_clue, "f1".into(), "f2".into(), location_clue.clone()],
             start_clue: "c1".into(),
             location_clue,
+            spatial_hint: Some(spatial_hint),
             settlement_order: settlements.clone(),
             settlement_display: display_of,
         };
@@ -464,12 +654,22 @@ impl<'a> ClueGenerator<'a> {
             .unwrap_or_else(|| panic!("no template for kind {kind:?} herring={herring}"))
     }
 
-    fn render(&self, template: &ClueTemplate, settlement: &str, npc: &str, key: &str) -> String {
+    fn render(
+        &self,
+        template: &ClueTemplate,
+        settlement: &str,
+        npc: &str,
+        key: &str,
+        direction: &str,
+        distance: &str,
+    ) -> String {
         template
             .text
             .replace("{settlement}", settlement)
             .replace("{npc}", npc)
             .replace("{key}", key)
+            .replace("{direction}", direction)
+            .replace("{distance}", distance)
     }
 
     fn gate(&mut self) -> i32 {
@@ -492,11 +692,47 @@ impl<'a> ClueGenerator<'a> {
             .copied()
             .expect("at least one passable tomb candidate")
     }
+
+    /// The spatial hint naming `tomb`: anchored on the nearest graph
+    /// settlement (role order breaks ties; a settlement sitting on the tomb
+    /// tile itself is a degenerate anchor and is skipped), relation and
+    /// band measured from real geometry, confidence a pure function of the
+    /// seed — never an RNG draw, so the solver's rng stream is untouched.
+    fn hint_for_tomb(&self, tomb: (u32, u32), settlements: &[String]) -> SpatialHint {
+        let anchor = settlements
+            .iter()
+            .filter_map(|s| self.world.settlement(s).map(|st| (s, (st.x, st.y))))
+            .min_by_key(|(_, tile)| {
+                let km = tile_distance_km(*tile, tomb, KM_PER_CELL);
+                ((km == 0.0) as u8, (km * 1000.0) as u64)
+            })
+            .map(|(id, _)| id.clone())
+            .expect("graph settlements exist on the world map");
+        let anchor_tile = self
+            .world
+            .settlement(&anchor)
+            .map(|s| (s.x, s.y))
+            .expect("anchor settlement resolved above");
+        let km = tile_distance_km(anchor_tile, tomb, KM_PER_CELL);
+        let hash = self
+            .seed
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .rotate_left(17);
+        SpatialHint {
+            origin: anchor,
+            relation: relation_between(anchor_tile, tomb),
+            band: DistanceBand::from_km(km),
+            confidence: 0.75 + (hash % 20) as f64 / 100.0,
+            target: HintTarget::Tomb,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::path::Path;
 
     fn clue(
         id: &str,
@@ -528,6 +764,7 @@ mod tests {
             leg_b: vec!["c1".into(), "c5".into()],
             start_clue: "c1".into(),
             location_clue: "c5".into(),
+            spatial_hint: None,
             settlement_order: vec!["cairo".into()],
             settlement_display: BTreeMap::new(),
         }
@@ -563,5 +800,90 @@ mod tests {
 
         // Consuming the key-granting clue breaks it.
         assert!(!solvable.is_solvable(&BTreeSet::from(["e0".to_string()])));
+    }
+
+    #[test]
+    fn relation_octants_are_compass_accurate() {
+        // Origin at (5, 5); each octant's dominant direction is stable.
+        let cases = [
+            ((5u32, 5u32), (5u32, 0u32), CompassRelation::North),
+            ((5, 5), (8, 2), CompassRelation::NorthEast),
+            ((5, 5), (11, 6), CompassRelation::East),
+            ((5, 5), (9, 9), CompassRelation::SouthEast),
+            ((5, 5), (5, 10), CompassRelation::South),
+            ((5, 5), (1, 9), CompassRelation::SouthWest),
+            ((5, 5), (0, 5), CompassRelation::West),
+            ((5, 5), (2, 2), CompassRelation::NorthWest),
+        ];
+        for (from, to, expected) in cases {
+            assert_eq!(relation_between(from, to), expected, "{from:?} -> {to:?}");
+        }
+    }
+
+    #[test]
+    fn distance_band_boundaries_match_sector_ranges() {
+        // Distance partitions: [0,100) [100,250) [250,500) [500,1000] (1000,∞).
+        for (km, band) in [
+            (0.0, DistanceBand::ShortWalk),
+            (99.9, DistanceBand::ShortWalk),
+            (100.0, DistanceBand::HalfDay),
+            (249.9, DistanceBand::HalfDay),
+            (250.0, DistanceBand::OneDay),
+            (499.9, DistanceBand::OneDay),
+            (500.0, DistanceBand::TwoDays),
+            (1000.0, DistanceBand::TwoDays),
+            (1000.1, DistanceBand::LongJourney),
+        ] {
+            assert_eq!(DistanceBand::from_km(km), band, "km {km}");
+        }
+        // km_range agrees at the inclusive ends of each band.
+        for band in [
+            DistanceBand::ShortWalk,
+            DistanceBand::HalfDay,
+            DistanceBand::OneDay,
+            DistanceBand::TwoDays,
+        ] {
+            let (min, max) = band.km_range();
+            assert!(min < max);
+            assert_eq!(DistanceBand::from_km(min), band, "{band:?} min {min}");
+            // Upper ends are exclusive except TwoDays' (the 1000 km cap).
+            if band == DistanceBand::TwoDays {
+                assert_eq!(DistanceBand::from_km(max), band, "{band:?} max {max}");
+            } else {
+                assert_ne!(DistanceBand::from_km(max), band, "{band:?} max {max}");
+            }
+        }
+        // LongJourney is (1000, ∞): its lower end is open.
+        let (min, max) = DistanceBand::LongJourney.km_range();
+        assert!(!max.is_finite());
+        assert_eq!(DistanceBand::from_km(min + 1e-6), DistanceBand::LongJourney);
+    }
+
+    #[test]
+    fn sector_excludes_anchor_and_other_bands() {
+        let world = crate::content::load::load_world(Path::new("content")).unwrap();
+        // Anchor on a real settlement; the tomb 20 tiles south-east.
+        let anchor = world.settlement("asyut").unwrap();
+        let (ax, ay) = (anchor.x, anchor.y);
+        let hint = SpatialHint {
+            origin: "asyut".into(),
+            relation: relation_between((ax, ay), (ax + 10, ay + 10)),
+            band: DistanceBand::from_km(tile_distance_km(
+                (ax, ay),
+                (ax + 10, ay + 10),
+                KM_PER_CELL,
+            )),
+            confidence: 0.9,
+            target: HintTarget::Tomb,
+        };
+        assert!(hint.sector_contains(&world, (ax + 10, ay + 10)));
+        assert!(!hint.sector_contains(&world, (ax, ay)), "anchor itself");
+        assert!(!hint.sector_contains(&world, (ax - 10, ay + 10)), "west");
+        assert!(!hint.sector_contains(&world, (ax + 30, ay + 30)), "too far");
+        // An exaggerated band must not swallow the whole map.
+        let far = hint.clone();
+        let mut far_hint = far;
+        far_hint.band = DistanceBand::ShortWalk;
+        assert!(!far_hint.sector_contains(&world, (ax + 10, ay + 10)));
     }
 }

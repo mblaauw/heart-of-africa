@@ -11,9 +11,12 @@
 //! because "what have I tried" is player memory, not game data.
 
 use heart_of_africa::sim::Input;
+use heart_of_africa::sim::clues::{CompassRelation, DistanceBand, relation_between};
 use heart_of_africa::sim::game::{Game, GameStatus};
 use heart_of_africa::sim::player::Direction;
+use heart_of_africa::world::KM_PER_CELL;
 use heart_of_africa::world::World;
+use heart_of_africa::world::geo::tile_distance_km;
 use heart_of_africa::world::pathfind::find_path;
 
 /// Input budget: a bot exceeding it is a softlock.
@@ -32,6 +35,19 @@ pub struct PlayerBot {
     seen_diary: usize,
     /// Gift attempts at the current resident (gates need at most ~3).
     gifts: usize,
+    /// The tomb search parsed from the location clue's prose (WS2).
+    tomb_scan: Option<TombScan>,
+}
+
+/// The tomb search a player would run from the location clue's text:
+/// anchor settlement, compass relation, distance band, and the tiles
+/// already examined ("where have I looked" is player memory, not game
+/// data).
+struct TombScan {
+    anchor: String,
+    relation: CompassRelation,
+    band: DistanceBand,
+    done: Vec<(u32, u32)>,
 }
 
 impl PlayerBot {
@@ -95,6 +111,12 @@ impl PlayerBot {
 
         // New diary entries carry the next destination in prose.
         self.absorb_diary(game, world);
+
+        // Parsed from the location clue's text (WS2): sweep the hinted
+        // sector until standing on the tomb triggers discovery.
+        if self.tomb_scan.is_some() {
+            return self.tomb_step(game, world);
+        }
 
         let here = game.settlement_at(world).map(|s| s.id.clone());
         let target = self.target.clone();
@@ -162,6 +184,13 @@ impl PlayerBot {
         for text in &new {
             if !text.starts_with("Clue recorded") {
                 continue;
+            }
+            // WS2: the location clue is spatial prose
+            // ("{distance} {direction} of {settlement} …"); read it into a
+            // search task the way a player would read a map.
+            if let Some(scan) = parse_tomb_clue(text, world) {
+                self.tomb_scan = Some(scan);
+                return;
             }
             for settlement in &world.settlements {
                 if Some(&settlement.id) != here.as_ref() && text.contains(&settlement.name) {
@@ -302,8 +331,14 @@ impl PlayerBot {
         // Night travel through tsetse country and when thirsty in open
         // desert — daylight exposure is how the ailments find you.
         let biome = world.grid.biome_id_at(next.0, next.1);
-        if game.tick.is_daylight()
-            && (biome == "savanna" || (biome == "desert" && game.survival.hydration < 60.0))
+        let hour = game.tick.hour_of_day();
+        let thirsty = game.survival.hydration < 60.0;
+        // A move spans `cost` hours; rest from hour 6−cost so the last
+        // hour never rolls into daylight exposure (§4.3).
+        let exposed = biome == "savanna" || (biome == "desert" && thirsty);
+        if exposed
+            && hour >= 6u64.saturating_sub(world.grid.movement_cost_at(next.0, next.1) as u64)
+            && hour < 18
         {
             return Some(Input::Rest);
         }
@@ -315,4 +350,93 @@ impl PlayerBot {
         self.residents_done.clear();
         self.gifts = 0;
     }
+
+    /// One step of the endgame search (WS2): examine the nearest unexamined
+    /// tile of the sector the clue prose described. Standing on the tomb
+    /// triggers discovery inside the sim; the marker branch above then
+    /// takes over. Sector coverage is guaranteed to finish before
+    /// `done` can exhaust it, because the tomb itself is inside the sector.
+    fn tomb_step(&mut self, game: &mut Game, world: &World) -> Option<Input> {
+        let scan = self.tomb_scan.as_ref()?;
+        let anchor = world.settlement(&scan.anchor)?;
+        let (ox, oy) = (anchor.x, anchor.y);
+        let (x, y) = game.player.pos();
+        let (min, max) = scan.band.km_range();
+        let mut best: Option<(u64, u64, u64, (u32, u32))> = None;
+        for ty in 0..world.grid.height() {
+            for tx in 0..world.grid.width() {
+                let tile = (tx, ty);
+                if tile == (ox, oy)
+                    || !world.grid.passable_at(tx, ty)
+                    || scan.done.contains(&tile)
+                    || relation_between((ox, oy), tile) != scan.relation
+                {
+                    continue;
+                }
+                let km = tile_distance_km((ox, oy), tile, KM_PER_CELL);
+                if km < min || km > max {
+                    continue;
+                }
+                let d =
+                    (tx as i64 - x as i64).unsigned_abs() + (ty as i64 - y as i64).unsigned_abs();
+                if best.is_none_or(|(bd, bx, by, _)| (d, tx as u64, ty as u64) < (bd, bx, by)) {
+                    best = Some((d, tx as u64, ty as u64, tile));
+                }
+            }
+        }
+        let target = best.map(|(_, _, _, t)| t)?;
+        if target == (x, y) {
+            self.tomb_scan.as_mut()?.done.push(target);
+            return self.tomb_step(game, world);
+        }
+        if self.travel_or_walk(game, world, target).is_none() {
+            self.tomb_scan.as_mut()?.done.push(target);
+            return self.tomb_step(game, world);
+        }
+        self.travel_or_walk(game, world, target)
+    }
+}
+
+/// The location clue is spatial prose ("{distance} {direction} of
+/// {settlement} …"); parse it into the search semantics a player would
+/// read off a map. Returns None unless all three parts are present, so
+/// ordinary clue texts never match.
+fn parse_tomb_clue(text: &str, world: &World) -> Option<TombScan> {
+    let band = [
+        DistanceBand::ShortWalk,
+        DistanceBand::HalfDay,
+        DistanceBand::OneDay,
+        DistanceBand::TwoDays,
+        DistanceBand::LongJourney,
+    ]
+    .into_iter()
+    .find(|b| text.contains(b.phrase()))?;
+    // Compound directions must be checked before their plain
+    // substrings ("north" is a prefix of "northeast", etc.).
+    let relation = [
+        CompassRelation::NorthEast,
+        CompassRelation::NorthWest,
+        CompassRelation::SouthEast,
+        CompassRelation::SouthWest,
+        CompassRelation::North,
+        CompassRelation::South,
+        CompassRelation::East,
+        CompassRelation::West,
+    ]
+    .into_iter()
+    .find(|r| text.contains(r.phrase()))?;
+    let anchor = world
+        .settlements
+        .iter()
+        .find(|s| {
+            text.find(&s.name)
+                .is_some_and(|idx| text[..idx].ends_with("of "))
+        })
+        .map(|s| s.id.clone())?;
+    Some(TombScan {
+        anchor,
+        relation,
+        band,
+        done: Vec::new(),
+    })
 }

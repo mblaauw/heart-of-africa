@@ -17,7 +17,7 @@ use crate::sim::survival::Survival;
 /// Current save format version. Old versions are rejected with a clear
 /// message (`from_json`); pre-release saves were explicitly invalidated when
 /// versioning landed (expansion spec, Part III).
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 2;
 
 /// A complete, reproducible snapshot of a run (DESIGN.md §4.10).
 ///
@@ -50,6 +50,13 @@ pub struct Save {
     pub caches: Vec<Cache>,
     /// Tomb tile once the location clue names it.
     pub tomb_revealed: Option<(u32, u32)>,
+    /// Explored sim cells as sector masks over the map tiles
+    /// (WS1 fog of war). Each entry is a (sector_x, sector_y)
+    /// pair; the sector size is a render-layer constant.
+    pub explored_sectors: BTreeSet<(u32, u32)>,
+    /// Labels learned from landmarks and regions; persists
+    /// across saves and are re-interpreted by the diary (WS2).
+    pub known_labels: BTreeSet<String>,
     pub status: GameStatus,
     /// Ordered player inputs, in application order (the replay log).
     pub input_log: Vec<Input>,
@@ -115,6 +122,8 @@ mod tests {
             rivals_consumed: BTreeSet::new(),
             caches: Vec::new(),
             tomb_revealed: None,
+            explored_sectors: BTreeSet::new(),
+            known_labels: BTreeSet::new(),
             status: GameStatus::Playing,
             diary: Vec::new(),
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],
@@ -151,7 +160,7 @@ mod tests {
         let json = to_json(&save).unwrap();
         let err = from_json(&json).unwrap_err().to_string();
         assert!(err.contains("save version 0"), "{err}");
-        assert!(err.contains("expected 1"), "{err}");
+        assert!(err.contains("expected 2"), "{err}");
     }
 
     #[test]

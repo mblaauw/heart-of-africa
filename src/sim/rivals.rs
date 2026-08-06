@@ -9,6 +9,13 @@
 /// Days between rival hops between settlements.
 pub const HOP_DAYS: u64 = 3;
 
+/// Rivals only consume exclusive clues on arrival days at or after this day.
+/// Earlier arrivals just spread rumors, giving the player a real chance to
+/// race for a leg on foot (DESIGN.md §4.8 "raced", §9 budgeted solvability):
+/// a clue a player cannot physically reach before the rival takes it is not
+/// a race, it's a lock.
+pub const CONSUME_GRACE_DAY: u64 = 9;
+
 /// The rival's current settlement: one hop around the circuit every
 /// `HOP_DAYS` days, starting staggered by index.
 pub fn position(day: u64, rival_index: usize, order: &[String]) -> &str {

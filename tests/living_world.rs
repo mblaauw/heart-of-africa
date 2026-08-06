@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use heart_of_africa::content::load::{load_game_content, load_world};
 use heart_of_africa::sim::Input;
 use heart_of_africa::sim::game::{Game, GameStatus};
+use heart_of_africa::sim::player::Direction;
 use heart_of_africa::sim::rivals;
 use heart_of_africa::world::World;
 use heart_of_africa::world::pathfind::find_path;
@@ -388,4 +389,106 @@ fn player_view_bot_completes_100_seeds() {
             log.len()
         );
     }
+}
+
+// --- WS2 Milestone 1 acceptance: SpatialHint semantics (EXPANSION_PLAN §WS2) ---
+
+/// Every seed's spatial hint genuinely contains the tomb tile —
+/// the sector the bots sweep is never a lie (§10.3, §9).
+#[test]
+fn hint_sector_contains_tomb_for_all_seeds() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    for seed in 0..100 {
+        let game = fresh_game(seed, &world);
+        let hint = game
+            .graph
+            .spatial_hint
+            .as_ref()
+            .expect("every seed has a spatial hint");
+        let tomb = game.graph.expedition.tomb_tile;
+        assert!(
+            hint.sector_contains(&world, tomb),
+            "seed {seed} tomb {tomb:?} not in hint sector (origin {} rel {:?} band {:?})",
+            hint.origin,
+            hint.relation,
+            hint.band
+        );
+    }
+}
+
+/// The spatial hint is a pure, deterministic function of the seed — never
+/// serialized, never dependent on RNG draws or game state. Two fresh games
+/// with the same seed produce identical hints.
+#[test]
+fn hint_is_a_deterministic_function_of_seed() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    for seed in 0..30 {
+        let a = fresh_game(seed, &world);
+        let b = fresh_game(seed, &world);
+        assert_eq!(
+            a.graph.spatial_hint, b.graph.spatial_hint,
+            "seed {seed} hints differ across fresh games"
+        );
+    }
+}
+
+/// The tomb is *not* revealed by merely standing on the tile — the
+/// location clue must be in hand first. Walking onto the tile without it
+/// changes nothing (EXPANSION_PLAN §WS2 "no-magic-reveal").
+#[test]
+fn tomb_not_revealed_without_location_clue() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    let mut game = fresh_game(0, &world);
+    let tomb = game.graph.expedition.tomb_tile;
+    let (sx, sy) = game.player.pos();
+    let path = find_path(&world.grid, (sx, sy), tomb).expect("tomb is reachable");
+    for pair in path.windows(2) {
+        let dir = Direction::between(pair[0], pair[1]).unwrap();
+        game.apply(&Input::Move(dir), &world);
+    }
+    assert_eq!(
+        game.player.pos(),
+        tomb,
+        "player should be standing on the tomb tile"
+    );
+    assert!(
+        game.tomb_revealed.is_none(),
+        "tomb must not be revealed without the location clue"
+    );
+    assert!(
+        !matches!(game.status, GameStatus::Won),
+        "must not win by standing on the tomb without the clue"
+    );
+}
+
+/// With the location clue in hand, stepping onto the tomb tile reveals it —
+/// `tomb_revealed` becomes `Some`, a diary entry is recorded, and the win
+/// condition fires (the bot wins on the same step, EXPANSION_PLAN §WS2
+/// "discovery-on-arrival").
+#[test]
+fn tomb_revealed_on_arrival_with_location_clue() {
+    let world = load_world(common::content_dir()).expect("content loads");
+    let mut game = fresh_game(1, &world); // seed 1: fast win, short OneDay sweep
+    let log = bot::play_recording(&mut game, &world);
+    let tomb = game.graph.expedition.tomb_tile;
+    assert_eq!(
+        game.status,
+        GameStatus::Won,
+        "bot should win ({log_len:?} inputs)",
+        log_len = log.len()
+    );
+    assert_eq!(
+        game.tomb_revealed,
+        Some(tomb),
+        "tomb_revealed must be set to the tomb tile on discovery"
+    );
+    let entry = game
+        .diary
+        .iter()
+        .find(|e| e.text.contains("cleft in the red rock"))
+        .expect("discovery diary entry was recorded");
+    assert!(
+        entry.text.contains("cleft in the red rock"),
+        "discovery entry text is the standard diary prose"
+    );
 }

@@ -45,6 +45,11 @@ fn validate_world(world: &crate::world::World) -> Vec<String> {
                 "settlement {:?} at ({}, {}) is outside the map",
                 s.id, s.x, s.y
             ));
+        } else if !world.grid.passable_at(s.x, s.y) {
+            problems.push(format!(
+                "settlement {:?} at ({}, {}) is on an impassable tile",
+                s.id, s.x, s.y
+            ));
         }
     }
 
@@ -189,6 +194,22 @@ fn validate_game_content(
                 ));
             }
         }
+        // The location template is spatial (EXPANSION_PLAN §WS2): without
+        // the geometry slots its text would be prose that cannot match the
+        // seeded tomb, silently breaking solvability.
+        if let Some(location) = gen_input
+            .templates
+            .iter()
+            .find(|t| t.kind == ClueKind::Location && !t.red_herring)
+        {
+            for slot in ["{direction}", "{distance}"] {
+                if !location.text.contains(slot) {
+                    problems.push(format!(
+                        "generator: location template misses the spatial slot {slot:?}"
+                    ));
+                }
+            }
+        }
         if gen_input.tomb_candidates.is_empty() {
             problems.push("generator: no tomb candidates".to_string());
         }
@@ -305,6 +326,69 @@ fn validate_game_content(
             problems.push(format!(
                 "route {:?} connects a settlement to itself",
                 route.id
+            ));
+        }
+        for &(x, y) in &route.tiles {
+            if !world.grid.in_bounds(x, y) {
+                problems.push(format!(
+                    "route {:?} tile ({x},{y}) is outside the map",
+                    route.id
+                ));
+            } else if !world.grid.passable_at(x, y) {
+                problems.push(format!(
+                    "route {:?} tile ({x},{y}) is on an impassable tile",
+                    route.id
+                ));
+            }
+        }
+    }
+
+    // Regions: polygons must have at least 3 points and be closed.
+    for region in &world.regions {
+        if region.polygon.ring.len() < 3 {
+            problems.push(format!("region {:?} has fewer than 3 points", region.id));
+        }
+        let closed = region
+            .polygon
+            .ring
+            .first()
+            .zip(region.polygon.ring.last())
+            .map(|(first, last)| {
+                (first.x - last.x).abs() <= 1e-9 && (first.y - last.y).abs() <= 1e-9
+            })
+            .unwrap_or(false);
+        if !closed {
+            problems.push(format!(
+                "region {:?} polygon is not closed (first != last)",
+                region.id
+            ));
+        }
+        for point in &region.polygon.ring {
+            let max_km = world.width as f64 * crate::world::KM_PER_CELL;
+            if point.x < 0.0
+                || point.x > max_km
+                || point.y < 0.0
+                || point.y > world.height as f64 * crate::world::KM_PER_CELL
+            {
+                problems.push(format!(
+                    "region {:?} polygon point ({:.1}, {:.1}) is outside the sim extent",
+                    region.id, point.x, point.y
+                ));
+            }
+        }
+    }
+
+    // Landmarks: points must be within the world bounds.
+    for lm in &world.landmarks {
+        let (tx, ty) = (
+            (lm.point.x / crate::world::KM_PER_CELL).floor().max(0.0) as u32,
+            (lm.point.y / crate::world::KM_PER_CELL).floor().max(0.0) as u32,
+        );
+        if tx >= world.width || ty >= world.height {
+            problems.push(format!(
+                "landmark {:?} at km ({:.1}, {:.1}) maps to tile ({}, {}) \
+                 outside the {}×{} map",
+                lm.id, lm.point.x, lm.point.y, tx, ty, world.width, world.height
             ));
         }
     }

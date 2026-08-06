@@ -24,7 +24,9 @@ rep_gate_min = 3
 rep_gate_max = 6
 
 # Text templates. {settlement} and {npc} are replaced with the assigned
-# names; {key} with the key item's display name.
+# names; {key} with the key item's display name. The location template is
+# spatial: {direction} and {distance} are rendered from the hint computed
+# against real geometry (WS2) — content lint requires them to be present.
 [[template]]
 kind = "hint"
 text = "The trail is no secret to the old ones. Ask in {settlement}; {npc} there knows more than he lets on."
@@ -39,7 +41,7 @@ text = "The {key} speaks true. I have seen the records: what was buried is not b
 
 [[template]]
 kind = "location"
-text = "Two days' march east of {settlement}, past the quarries, the hills split open under the red rock. There the king sleeps."
+text = "{distance} {direction} of {settlement}, past the quarries, the hills split open under the red rock. There the king sleeps."
 
 [[template]]
 kind = "hint"

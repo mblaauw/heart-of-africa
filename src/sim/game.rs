@@ -16,7 +16,7 @@ use crate::dialogue::npc::{Effect, Npc};
 use crate::save::Save;
 use crate::sim::Input;
 use crate::sim::clock::Tick;
-use crate::sim::clues::{ClueGenerator, ClueGraph, ClueKind, GeneratorInput};
+use crate::sim::clues::{ClueGenerator, ClueGraph, GeneratorInput, SpatialHint};
 use crate::sim::economy::{Goods, Market, MarketEntry, season_factor};
 use crate::sim::events;
 use crate::sim::player::{Direction, Player};
@@ -102,8 +102,15 @@ pub struct Game {
     pub diary: Vec<DiaryEntry>,
     pub caches: Vec<Cache>,
     pub status: GameStatus,
-    /// Tomb tile once the location clue names it (None until then).
+    /// Tomb tile once the player stands on it holding the location clue
+    /// (None until then; WS2 discovery, EXPANSION_PLAN §WS2).
     pub tomb_revealed: Option<(u32, u32)>,
+    /// Explored sim cells as sector masks over the map tiles
+    /// (WS1 fog of war).
+    pub explored_sectors: BTreeSet<(u32, u32)>,
+    /// Labels learned from landmarks and regions; persists across
+    /// saves and are re-interpreted by the diary (WS2).
+    pub known_labels: BTreeSet<String>,
     /// Active conversation, if any.
     pub conversation: Option<Conversation>,
     /// The generated mystery of this run.
@@ -134,6 +141,8 @@ impl Game {
             caches: Vec::new(),
             status: GameStatus::Playing,
             tomb_revealed: None,
+            explored_sectors: BTreeSet::new(),
+            known_labels: BTreeSet::new(),
             conversation: None,
             graph,
             content,
@@ -157,6 +166,8 @@ impl Game {
             caches: save.caches,
             status: save.status,
             tomb_revealed: save.tomb_revealed,
+            explored_sectors: save.explored_sectors,
+            known_labels: save.known_labels,
             conversation: None,
             graph,
             content,
@@ -218,6 +229,8 @@ impl Game {
             diary: self.diary.clone(),
             caches: self.caches.clone(),
             tomb_revealed: self.tomb_revealed,
+            explored_sectors: self.explored_sectors.clone(),
+            known_labels: self.known_labels.clone(),
             status: self.status.clone(),
             input_log,
         }
@@ -294,12 +307,36 @@ impl Game {
         Vec::new()
     }
 
-    /// Shared post-movement bookkeeping: death and win checks.
+    /// Shared post-movement bookkeeping: death, tomb discovery, win checks.
     pub(crate) fn after_movement(&mut self) {
         if let Some(reason) = self.survival.cause_of_death() {
             self.die(reason);
         } else {
+            // WS2: the location clue names a region, not a tile. The tomb
+            // is discovered by standing on it — the spatial hint (diary
+            // text) is what leads a player here (EXPANSION_PLAN §WS2).
+            if self.tomb_revealed.is_none()
+                && self.clues.contains(&self.graph.location_clue)
+                && self.player.pos() == self.graph.expedition.tomb_tile
+            {
+                self.tomb_revealed = Some(self.graph.expedition.tomb_tile);
+                self.diary.push(DiaryEntry {
+                    tick: self.tick,
+                    text: "The cleft in the red rock opens before you — the hills split apart, and the way down is clear."
+                        .to_string(),
+                });
+            }
             self.check_win();
+        }
+    }
+
+    /// The semantic content of the location clue, once it is obtained
+    /// (None before). A pure function of the seed — never serialized.
+    pub fn tomb_hint(&self) -> Option<SpatialHint> {
+        if self.clues.contains(&self.graph.location_clue) {
+            self.graph.spatial_hint.clone()
+        } else {
+            None
         }
     }
 
@@ -460,9 +497,6 @@ impl Game {
             if let Some(item) = &clue.gives_item {
                 self.player.add_item(item);
             }
-            if clue.kind == ClueKind::Location {
-                self.tomb_revealed = Some(self.graph.expedition.tomb_tile);
-            }
             // Falsification: obtaining the contradiction proves herrings false
             // (DESIGN.md §4.5: discoverable as false through corroboration).
             for herring in self.graph.clues.values() {
@@ -562,7 +596,13 @@ impl Game {
                 events.push(format!("Rumor: {name} was seen in {display}."));
                 // Rival consumption: an exclusive clue here, if taking it
                 // keeps at least one complete path open (the solvability
-                // proof, DESIGN.md §9).
+                // proof, DESIGN.md §9). Consumption is gated behind a grace
+                // window so the player can race the rival on foot first
+                // (DESIGN.md §4.8); before then the rival only spread the
+                // rumor above.
+                if day < rivals::CONSUME_GRACE_DAY {
+                    continue;
+                }
                 let exclusives: Vec<String> = self
                     .graph
                     .clues
