@@ -21,6 +21,8 @@ pub fn validate_content(content_dir: &Path) -> Result<Vec<String>> {
     let world = load::load_world(content_dir)?;
     let mut problems = validate_world(&world);
 
+    problems.extend(validate_knowledges(&world));
+
     let content = load::load_game_content(content_dir)?;
     problems.extend(validate_game_content(&world, &content));
 
@@ -83,6 +85,21 @@ fn validate_world(world: &crate::world::World) -> Vec<String> {
         }
     }
 
+    problems
+}
+
+/// Cross-reference region knowledge against world regions:
+/// every knowledge key must name a loaded region.
+fn validate_knowledges(world: &crate::world::World) -> Vec<String> {
+    let mut problems: Vec<String> = Vec::new();
+    let region_ids: HashSet<&str> = world.regions.iter().map(|r| r.id.as_str()).collect();
+    for key in world.knowledges.keys() {
+        if !region_ids.contains(key.as_str()) {
+            problems.push(format!(
+                "region-knowledge file names region {key:?} which is not a loaded region"
+            ));
+        }
+    }
     problems
 }
 

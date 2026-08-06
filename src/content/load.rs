@@ -158,6 +158,8 @@ struct GeographyRegionToml {
 #[derive(serde::Deserialize)]
 struct GeographyLandmarkToml {
     id: String,
+    #[serde(default)]
+    name: String,
     kind: String,
     point: (f64, f64),
 }
@@ -293,10 +295,21 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         let landmarks: Vec<crate::world::Landmark> = geo_raw
             .landmarks
             .iter()
-            .map(|l| crate::world::Landmark {
-                id: l.id.clone(),
-                kind: l.kind.clone(),
-                point: crate::world::geo::KmPoint::new(l.point.0, l.point.1),
+            .map(|l| {
+                let x = (l.point.0 / crate::world::coords::KM_PER_CELL) as u32;
+                let y = (l.point.1 / crate::world::coords::KM_PER_CELL) as u32;
+                crate::world::Landmark {
+                    id: l.id.clone(),
+                    name: if l.name.is_empty() {
+                        l.id.clone()
+                    } else {
+                        l.name.clone()
+                    },
+                    kind: l.kind.clone(),
+                    point: crate::world::geo::KmPoint::new(l.point.0, l.point.1),
+                    x,
+                    y,
+                }
             })
             .collect();
         (settlements, rivers, routes, regions, landmarks)
@@ -375,7 +388,31 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
             settlements,
             rivers,
             routes,
-            Vec::<crate::world::Region>::new(),
+            vec![crate::world::Region {
+                id: raw.region.id.clone(),
+                polygon: crate::world::geo::KmPolygon {
+                    id: raw.region.id.clone(),
+                    // Legacy world.toml has no polygon data; a degenerate box
+                    // covering the full extent is a placeholder until
+                    // geography.toml provides real region geometry.
+                    ring: vec![
+                        crate::world::geo::KmPoint::new(0.0, 0.0),
+                        crate::world::geo::KmPoint::new(
+                            img.width() as f64 * crate::world::coords::KM_PER_CELL,
+                            0.0,
+                        ),
+                        crate::world::geo::KmPoint::new(
+                            img.width() as f64 * crate::world::coords::KM_PER_CELL,
+                            img.height() as f64 * crate::world::coords::KM_PER_CELL,
+                        ),
+                        crate::world::geo::KmPoint::new(
+                            0.0,
+                            img.height() as f64 * crate::world::coords::KM_PER_CELL,
+                        ),
+                        crate::world::geo::KmPoint::new(0.0, 0.0),
+                    ],
+                },
+            }],
             Vec::<crate::world::Landmark>::new(),
         )
     };

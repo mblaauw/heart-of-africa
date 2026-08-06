@@ -76,8 +76,12 @@ pub struct Region {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Landmark {
     pub id: String,
+    pub name: String,
     pub kind: String,
     pub point: geo::KmPoint,
+    /// Tile coords of the landmark (derived from the km point at load).
+    pub x: u32,
+    pub y: u32,
 }
 
 /// Regional vocabulary and social knowledge (EXPANSION_PLAN §WS2): the

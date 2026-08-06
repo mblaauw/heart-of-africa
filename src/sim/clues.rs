@@ -201,8 +201,8 @@ pub enum HintTarget {
 /// derive from it, so solvability operates on semantics only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpatialHint {
-    /// Origin anchor: a settlement id (landmarks join in the regions
-    /// milestone).
+    /// Origin anchor: a settlement or landmark id (the latter replaces
+    /// settlements in the regions milestone — EXPANSION_PLAN §WS2).
     pub origin: String,
     pub relation: CompassRelation,
     pub band: DistanceBand,
@@ -212,10 +212,13 @@ pub struct SpatialHint {
 }
 
 impl SpatialHint {
-    /// The anchor tile the hint is measured from.
+    /// The anchor tile the hint is measured from (settlement or landmark).
     pub fn origin_tile(&self, world: &World) -> Option<(u32, u32)> {
-        let s = world.settlement(&self.origin)?;
-        Some((s.x, s.y))
+        if let Some(s) = world.settlement(&self.origin) {
+            return Some((s.x, s.y));
+        }
+        let l = world.landmarks.iter().find(|l| l.id == self.origin)?;
+        Some((l.x, l.y))
     }
 
     /// Whether `tile` lies in the claimed search sector: the octant wedge
@@ -401,7 +404,7 @@ impl<'a> ClueGenerator<'a> {
                 (settlement.clone(), name)
             })
             .collect();
-        let display_of: BTreeMap<String, String> = settlements
+        let mut display_of: BTreeMap<String, String> = settlements
             .iter()
             .map(|s| {
                 let name = self
@@ -412,6 +415,11 @@ impl<'a> ClueGenerator<'a> {
                 (s.clone(), name)
             })
             .collect();
+        // Landmark names join the display map so the location clue renders
+        // their names when a landmark replaces the settlement as origin.
+        for lm in &self.world.landmarks {
+            display_of.insert(lm.id.clone(), lm.name.clone());
+        }
 
         let key_name = self.input.key_goods.name.clone();
         let key_item_id = self.input.config.key_item.clone();
@@ -693,13 +701,15 @@ impl<'a> ClueGenerator<'a> {
             .expect("at least one passable tomb candidate")
     }
 
-    /// The spatial hint naming `tomb`: anchored on the nearest graph
-    /// settlement (role order breaks ties; a settlement sitting on the tomb
-    /// tile itself is a degenerate anchor and is skipped), relation and
-    /// band measured from real geometry, confidence a pure function of the
-    /// seed — never an RNG draw, so the solver's rng stream is untouched.
+    /// The spatial hint naming `tomb`: anchored on the nearest settlement
+    /// (role order breaks ties; a settlement sitting on the tomb tile itself
+    /// is a degenerate anchor and is skipped). When landmarks exist in the
+    /// world, the nearest landmark to that settlement replaces it as the
+    /// origin — the clue then names the landmark instead of the settlement
+    /// (EXPANSION_PLAN §WS2). Relation and band are measured from real
+    /// geometry; confidence is a pure function of the seed.
     fn hint_for_tomb(&self, tomb: (u32, u32), settlements: &[String]) -> SpatialHint {
-        let anchor = settlements
+        let settlement_anchor = settlements
             .iter()
             .filter_map(|s| self.world.settlement(s).map(|st| (s, (st.x, st.y))))
             .min_by_key(|(_, tile)| {
@@ -708,18 +718,41 @@ impl<'a> ClueGenerator<'a> {
             })
             .map(|(id, _)| id.clone())
             .expect("graph settlements exist on the world map");
-        let anchor_tile = self
-            .world
-            .settlement(&anchor)
-            .map(|s| (s.x, s.y))
-            .expect("anchor settlement resolved above");
+
+        // Prefer a landmark near the settlement when landmarks exist — the
+        // clue reads "two days northeast of the red hills" instead of
+        // "northeast of Kano". Falls back to the settlement when there are
+        // no landmarks (e.g. before geography.toml is authored).
+        let (origin_id, anchor_tile) = if !self.world.landmarks.is_empty() {
+            let settlement_tile = self
+                .world
+                .settlement(&settlement_anchor)
+                .map(|s| (s.x, s.y))
+                .expect("anchor settlement resolved above");
+            if let Some(lm) = self.world.landmarks.iter().min_by_key(|l| {
+                let km = tile_distance_km((l.x, l.y), settlement_tile, KM_PER_CELL);
+                (km * 1000.0) as u64
+            }) {
+                (lm.id.clone(), (lm.x, lm.y))
+            } else {
+                (settlement_anchor.clone(), settlement_tile)
+            }
+        } else {
+            let tile = self
+                .world
+                .settlement(&settlement_anchor)
+                .map(|s| (s.x, s.y))
+                .expect("anchor settlement resolved above");
+            (settlement_anchor.clone(), tile)
+        };
+
         let km = tile_distance_km(anchor_tile, tomb, KM_PER_CELL);
         let hash = self
             .seed
             .wrapping_mul(0x9E37_79B9_7F4A_7C15)
             .rotate_left(17);
         SpatialHint {
-            origin: anchor,
+            origin: origin_id,
             relation: relation_between(anchor_tile, tomb),
             band: DistanceBand::from_km(km),
             confidence: 0.75 + (hash % 20) as f64 / 100.0,
