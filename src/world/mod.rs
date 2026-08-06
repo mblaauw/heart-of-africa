@@ -99,6 +99,15 @@ pub struct RegionKnowledge {
     pub etiquette: Vec<String>,
 }
 
+/// State of a regional gift preference (WS2 social preferences).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum GiftPrefState {
+    #[default]
+    Unknown,
+    Rumored,
+    Confirmed,
+}
+
 /// The loaded macro-geography of one region (DESIGN.md §3.1): the biome grid
 /// plus named settlements, rivers, routes, regions, and landmarks.
 #[derive(Debug, Clone)]

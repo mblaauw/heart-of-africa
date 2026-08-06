@@ -80,7 +80,7 @@ impl Game {
         if route.risky && events::encounter(self.seed, self.tick.as_hours()) {
             events.push(self.ambush());
         }
-        self.after_movement();
+        self.after_movement(world);
         events
     }
 

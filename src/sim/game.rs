@@ -22,7 +22,7 @@ use crate::sim::events;
 use crate::sim::player::{Direction, Player};
 use crate::sim::rivals;
 use crate::sim::survival::Survival;
-use crate::world::{Settlement, World};
+use crate::world::{GiftPrefState, Settlement, World};
 
 /// Start money of the expedition, in piastres.
 pub const START_MONEY: u32 = 300;
@@ -111,6 +111,9 @@ pub struct Game {
     /// Labels learned from landmarks and regions; persists across
     /// saves and are re-interpreted by the diary (WS2).
     pub known_labels: BTreeSet<String>,
+    /// Regional gift preference knowledge: region id → preference state
+    /// (WS2 social preferences — Unknown → Rumored → Confirmed).
+    pub preferences: BTreeMap<String, GiftPrefState>,
     /// Active conversation, if any.
     pub conversation: Option<Conversation>,
     /// The generated mystery of this run.
@@ -143,6 +146,7 @@ impl Game {
             tomb_revealed: None,
             explored_sectors: BTreeSet::new(),
             known_labels: BTreeSet::new(),
+            preferences: BTreeMap::new(),
             conversation: None,
             graph,
             content,
@@ -168,6 +172,7 @@ impl Game {
             tomb_revealed: save.tomb_revealed,
             explored_sectors: save.explored_sectors,
             known_labels: save.known_labels,
+            preferences: save.preferences.clone(),
             conversation: None,
             graph,
             content,
@@ -231,6 +236,7 @@ impl Game {
             tomb_revealed: self.tomb_revealed,
             explored_sectors: self.explored_sectors.clone(),
             known_labels: self.known_labels.clone(),
+            preferences: self.preferences.clone(),
             status: self.status.clone(),
             input_log,
         }
@@ -273,7 +279,7 @@ impl Game {
         for _ in 0..cost {
             self.advance_travel(world);
         }
-        self.after_movement();
+        self.after_movement(world);
         Vec::new()
     }
 
@@ -303,12 +309,24 @@ impl Game {
         let has_tent = self.player.item_count("tent") > 0;
         self.survival
             .on_rest(self.tick.hour_of_day(), at_settlement, has_tent);
-        self.after_movement();
+        self.after_movement(world);
         Vec::new()
     }
 
-    /// Shared post-movement bookkeeping: death, tomb discovery, win checks.
-    pub(crate) fn after_movement(&mut self) {
+    /// Shared post-movement bookkeeping: glossary, death, tomb discovery, win checks.
+    pub(crate) fn after_movement(&mut self, world: &World) {
+        if self.settlement_at(world).is_some()
+            && self.known_labels.is_empty()
+            && !world.knowledges.is_empty()
+        {
+            let glossary_events = self.learn_region_labels(world);
+            for text in &glossary_events {
+                self.diary.push(DiaryEntry {
+                    tick: self.tick,
+                    text: text.clone(),
+                });
+            }
+        }
         if let Some(reason) = self.survival.cause_of_death() {
             self.die(reason);
         } else {
@@ -338,6 +356,52 @@ impl Game {
         } else {
             None
         }
+    }
+
+    /// Learn the regional vocabulary the first time the player enters a
+    /// settlement. Each term is learned once; the region's gift preferences
+    /// become Rumored (the local NPCs have mentioned them).
+    pub fn learn_region_labels(&mut self, world: &World) -> Vec<String> {
+        let mut events = Vec::new();
+        if self.settlement_at(world).is_none() {
+            return events;
+        }
+        for (region_id, knowledge) in &world.knowledges {
+            for term in knowledge
+                .direction_terms
+                .iter()
+                .chain(&knowledge.distance_terms)
+                .chain(&knowledge.terrain_lore)
+                .chain(&knowledge.landmark_terms)
+                .chain(&knowledge.etiquette)
+            {
+                if self.known_labels.insert(term.clone()) {
+                    events.push(format!(
+                        "Glossary: '{}' is a local term I now understand.",
+                        term
+                    ));
+                }
+            }
+            // Social preferences: mark the region's gift culture as Rumored
+            // (mentioned by locals, but not personally confirmed).
+            if !self.preferences.contains_key(region_id) {
+                self.preferences
+                    .insert(region_id.clone(), GiftPrefState::Rumored);
+                if !knowledge.preferred_gifts.is_empty() {
+                    events.push(format!(
+                        "The people here value: {}.",
+                        knowledge.preferred_gifts.join(", ")
+                    ));
+                }
+                if !knowledge.disliked_gifts.is_empty() {
+                    events.push(format!(
+                        "I hear they dislike being offered: {}.",
+                        knowledge.disliked_gifts.join(", ")
+                    ));
+                }
+            }
+        }
+        events
     }
 
     /// The authoritative buy price at a settlement: base × season × drifted
@@ -463,7 +527,7 @@ impl Game {
         if let Some(ailment) = goods.cures {
             self.survival.cure(ailment);
         }
-        self.after_movement();
+        self.after_movement(world);
         vec![format!("Used 1 {}.", goods.name)]
     }
 

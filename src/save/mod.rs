@@ -13,6 +13,7 @@ use crate::sim::clock::Tick;
 use crate::sim::game::{Cache, DiaryEntry, GameStatus};
 use crate::sim::player::Player;
 use crate::sim::survival::Survival;
+use crate::world::GiftPrefState;
 
 /// Current save format version. Old versions are rejected with a clear
 /// message (`from_json`); pre-release saves were explicitly invalidated when
@@ -57,6 +58,8 @@ pub struct Save {
     /// Labels learned from landmarks and regions; persists
     /// across saves and are re-interpreted by the diary (WS2).
     pub known_labels: BTreeSet<String>,
+    /// Regional gift preference knowledge (WS2 social preferences).
+    pub preferences: BTreeMap<String, GiftPrefState>,
     pub status: GameStatus,
     /// Ordered player inputs, in application order (the replay log).
     pub input_log: Vec<Input>,
@@ -124,6 +127,7 @@ mod tests {
             tomb_revealed: None,
             explored_sectors: BTreeSet::new(),
             known_labels: BTreeSet::new(),
+            preferences: BTreeMap::new(),
             status: GameStatus::Playing,
             diary: Vec::new(),
             input_log: vec![Input::Move(Direction::South), Input::Move(Direction::East)],
