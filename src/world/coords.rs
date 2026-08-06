@@ -75,10 +75,31 @@ pub struct MapProjection {
 
 /// The authored high-resolution source size for the two-region extent
 /// (expansion spec: minimum long side 4096; tall extent ~4096×5632).
+/// Used as a validation target; the runtime projection is built from
+/// the committed manifest (TMJ map size) so the authored source is
+/// the truth.
 pub const DEFAULT_PRESENTATION_PX: (u32, u32) = (4096, 5632);
 
+/// Projection parameters sourced from the committed map manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ProjectionManifest {
+    pub presentation_size_px: (u32, u32),
+}
+
+impl ProjectionManifest {
+    /// Build a `MapProjection` from manifest dimensions and a sim grid.
+    pub fn projection(&self, width: u32, height: u32) -> MapProjection {
+        MapProjection::new(width, height, self.presentation_size_px)
+    }
+}
+
 impl MapProjection {
-    /// Build the projection for a sim grid of `width`×`height` tiles.
+    /// Build the projection for a sim grid of `width`×`height` tiles
+    /// and a presentation canvas of `presentation_size_px` pixels.
+    ///
+    /// The canvas size comes from the committed map manifest (TMJ map
+    /// width/height), not from a hard-coded constant — the authored
+    /// source is the truth.
     pub fn new(width: u32, height: u32, presentation_size_px: (u32, u32)) -> Self {
         MapProjection {
             bounds: WorldBounds {

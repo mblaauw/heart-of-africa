@@ -226,10 +226,11 @@ heart-of-africa/
 | Serialization | `serde`, `serde_json`, `toml` | ubiquitous |
 | RNG | `rand`, `rand_chacha` | one named seeded stream per subsystem (worldgen, weather, events, rivals) — subsystems can't perturb each other's sequences |
 | Image decode | `image` | biome-map PNG, `hoatool` art generation |
+| Geometry | `geo` | planar point-in-polygon, polyline length, polygon intersection (committed geography.toml stores plain f64 coords; geo types constructed at load — keeps the committed format stable across geo versions) |
 | HTTP (optional feature `llm`) | `ureq` | blocking client on a background thread; **no tokio, no async** |
 | Error handling | `anyhow` | bins and loaders; this repo has no custom error types |
 
-Deliberately absent: ECS (`hecs` — plain `Vec<Npc>` + ids until pain is demonstrated), a Tiled dependency, RON, async runtimes, a `pathfinding` crate (hand-rolled A* is fully visible and a pattern agents implement reliably), audio middleware (only if layered ambience is ever actually wanted), `noise` (weather and tile texture use hand-rolled deterministic hashing), `thiserror` (no custom error types).
+Deliberately absent: ECS (`hecs` — plain `Vec<Npc>` + ids until pain is demonstrated), a Tiled dependency, RON, async runtimes, a `pathfinding` crate (hand-rolled A* is fully visible, deterministic by construction with position-pinned tie-breaking, and the 48×66 grid makes a crate swap zero-value — the cost is the risk of different tie-breaking shifting hourly exposure and rippling through the 100-seed bot suite), audio middleware (only if layered ambience is ever actually wanted), `noise` (weather and tile texture use hand-rolled deterministic hashing), `thiserror` (no custom error types).
 
 ### 8.5 Platforms
 Native desktop primary; WASM build kept green from day one (near-free with Macroquad, great for sharing prototypes). The `llm` cargo feature is desktop-only initially.

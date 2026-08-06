@@ -10,6 +10,9 @@ use macroquad::prelude::*;
 use heart_of_africa::audio::Ambient;
 use heart_of_africa::content::load::{load_assets, load_game_content, load_world};
 use heart_of_africa::dialogue::llm::{self, LlmCache, LlmConfig, LlmContext, ValidatedReply};
+use heart_of_africa::render::map::camera::{
+    KnownBounds, MapView, ViewInput, ViewMode, apply_view_input,
+};
 use heart_of_africa::render::map::{MapRenderer, TILE_SIZE};
 use heart_of_africa::save::{read_save, write_save};
 use heart_of_africa::sim::Input;
@@ -182,10 +185,41 @@ async fn main() {
     let mut game = Game::new(1, content.clone(), &world);
     let mut input_log: Vec<Input> = Vec::new();
     let renderer = MapRenderer::new(&world, assets.as_ref());
+    let mut map_view = MapView::new((world.width, world.height));
+    let mut show_dev_panel = false;
 
     let _ = std::fs::create_dir_all("saves");
 
     loop {
+        // Camera input for the explore map (WS1): presentation-only, never
+        // part of the replay log. Tab toggles the view; in explore mode Esc
+        // returns to gameplay, F centers on the player, Home on the known
+        // world; wheel/± zoom, left-drag pans.
+        let mouse = mouse_position();
+        let screen = (screen_width(), screen_height());
+        apply_view_input(
+            &mut map_view,
+            ViewInput {
+                tab: is_key_pressed(KeyCode::Tab),
+                esc: is_key_pressed(KeyCode::Escape),
+                f: is_key_pressed(KeyCode::F),
+                home: is_key_pressed(KeyCode::Home),
+                zoom_in: is_key_pressed(KeyCode::Equal),
+                zoom_out: is_key_pressed(KeyCode::Minus),
+                wheel: mouse_wheel().1,
+                drag: if is_mouse_button_down(MouseButton::Left) {
+                    let d = mouse_delta_position();
+                    Some((d.x, d.y))
+                } else {
+                    None
+                },
+                mouse,
+                screen,
+            },
+            game.player.pos(),
+            KnownBounds::from_visited(game.player.visited()),
+        );
+
         // Movement and rest keys: every successful move is one sim tick.
         let keys = [
             (KeyCode::Up, Direction::North),
@@ -228,6 +262,9 @@ async fn main() {
             if is_key_pressed(KeyCode::Escape) {
                 std::process::exit(0);
             }
+            if is_key_pressed(KeyCode::F3) {
+                show_dev_panel = !show_dev_panel;
+            }
         }
 
         // The LLM garnish: poll the in-flight reply, apply validated actions.
@@ -244,6 +281,9 @@ async fn main() {
                 llm.line.as_deref(),
                 llm.waiting(),
             ));
+            if show_dev_panel {
+                heart_of_africa::ui::dev_panel(ctx, &game, &world);
+            }
         });
         for input in &inputs {
             input_log.push(input.clone());
@@ -251,13 +291,17 @@ async fn main() {
         }
 
         clear_background(BLACK);
-        renderer.draw(
-            &world,
-            game.player.pos(),
-            (screen_width(), screen_height()),
-            TILE_SIZE,
-            game.tomb_revealed,
-        );
+        if map_view.mode == ViewMode::Explore {
+            renderer.draw_explore(&world, &game, &map_view.camera, screen);
+        } else {
+            renderer.draw(
+                &world,
+                game.player.pos(),
+                screen,
+                TILE_SIZE,
+                game.tomb_revealed,
+            );
+        }
 
         // Ambient wind, weather-aware (render-side only).
         ambient.tick(events::weather(game.seed, game.tick.day()));

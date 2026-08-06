@@ -62,6 +62,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test                 # ~90 tests, incl. two 100-seed sim-bot suites (~1 min)
 cargo run --bin hoatool -- validate content assets
+cargo run --bin hoatool -- map validate content   # geography.toml vs biome grid
 ```
 
 The repo is written to be *agent-implementable by design*: plain structs,

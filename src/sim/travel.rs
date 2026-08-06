@@ -1,22 +1,30 @@
 //! Caravan fast-travel (DESIGN.md §4.2): time + supply cost, scouting,
 //! and the telegraphed risky-route encounter. Kept out of game.rs.
+//!
+//! Routes carry committed polyline geometry (precomputed at import time):
+//! `path_km` for time calculation and `tiles` for the hour-by-hour sim
+//! (visited marking, weather, encounter position). Preview and execution
+//! use the same data — they cannot diverge.
 
 use crate::sim::events;
-use crate::world::{Route, World};
+use crate::world::{KM_PER_CELL, Route, World};
 
 use super::game::Game;
 
 impl Game {
     /// Caravan fast-travel (DESIGN.md §4.2): the journey is simulated
-    /// hour-by-hour over the real route path at caravan pace (2 tiles per
-    /// in-game hour) — the same per-hour survival rule as walking, so
-    /// weather, day/night, ailment exposure, and rest drain apply. Crossed
-    /// days run the daily director via `apply`. The encounter roll happens
-    /// once, only on routes flagged risky (telegraphed before departure).
+    /// hour-by-hour over the committed polyline path at caravan pace
+    /// (2 tiles per in-game hour) — the same per-hour survival rule as
+    /// walking. Crossed days run the daily director via `apply`. The
+    /// encounter roll happens once, only on routes flagged risky
+    /// (telegraphed before departure).
     pub(crate) fn apply_travel(&mut self, route_id: &str, world: &World) -> Vec<String> {
         let Some(route) = world.routes.iter().find(|r| r.id == route_id) else {
             return Vec::new();
         };
+        if route.blocked {
+            return Vec::new();
+        }
         let Some(settlement) = self.settlement_at(world) else {
             return Vec::new();
         };
@@ -31,16 +39,34 @@ impl Game {
             return Vec::new();
         }
         let to = world.settlement(to_id).expect("validated route endpoint");
-        let from = world.settlement(from_id).expect("validated route endpoint");
+        let _from = world.settlement(from_id).expect("validated route endpoint");
 
-        // The straight-line path between the settlements (Manhattan).
-        let path = straight_path((from.x, from.y), (to.x, to.y));
-        let tiles = path.len() as u64;
-        let hours = tiles.div_ceil(2); // caravan pace: 2 tiles/hour
+        // Walk the committed polyline tile path (precomputed at import).
+        let tiles = &route.tiles;
+        if tiles.is_empty() {
+            return Vec::new();
+        }
+        // Caravan pace: 2 tiles per in-game hour; hours derived from
+        // committed km length so preview == executed by construction. The
+        // tile-path length is also covered (a winding committed polyline
+        // must still be walked to its end within the same ride).
+        let speed_km_per_hour = 2.0 * KM_PER_CELL;
+        let hours = ((route.path_km / speed_km_per_hour).ceil() as u64)
+            .max((tiles.len() as u64).div_ceil(2))
+            .max(1);
 
+        let tiles_per_hour = 2usize;
+        // Ride direction: the committed polyline runs from -> to; reverse it
+        // when boarding from the far end, or the ride would land at the
+        // wrong settlement.
+        let forward: Vec<(u32, u32)> = if to_id == route.to {
+            route.tiles.to_vec()
+        } else {
+            route.tiles.iter().rev().copied().collect()
+        };
         for hour in 0..hours {
-            let start = (hour * 2) as usize;
-            for &(tx, ty) in path.iter().skip(start).take(2) {
+            let start = hour as usize * tiles_per_hour;
+            for &(tx, ty) in forward.iter().skip(start).take(tiles_per_hour) {
                 self.player.teleport(tx, ty); // marks visited along the way
                 self.advance_travel(world);
             }
@@ -98,19 +124,87 @@ impl Game {
     }
 }
 
-/// The straight-line tile path from `from` to `to` (Manhattan), inclusive.
-fn straight_path(from: (u32, u32), to: (u32, u32)) -> Vec<(u32, u32)> {
-    let mut path = Vec::new();
-    let (mut cx, mut cy) = (from.0 as i64, from.1 as i64);
-    path.push((cx as u32, cy as u32));
-    let (dx, dy) = (to.0 as i64 - from.0 as i64, to.1 as i64 - from.1 as i64);
-    while cx != to.0 as i64 {
-        cx += dx.signum();
-        path.push((cx as u32, cy as u32));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::load::{load_game_content, load_world};
+
+    fn fixture_world() -> World {
+        load_world(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/content"
+        )))
+        .expect("content loads in tests")
     }
-    while cy != to.1 as i64 {
-        cy += dy.signum();
-        path.push((cx as u32, cy as u32));
+
+    /// Preview == executed: the caravan arrives exactly at the destination
+    /// and the whole committed path is walked and visited — the same tiles
+    /// the map overlay draws. Hours match the committed km length.
+    #[test]
+    fn travel_preview_matches_execution_for_all_committed_routes() {
+        let world = fixture_world();
+        let content = load_game_content(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/content"
+        )))
+        .expect("game content loads in tests");
+        assert!(!world.routes.is_empty(), "content has routes");
+
+        for route in &world.routes {
+            let mut game = Game::new(0, content.clone(), &world);
+            let from = world.settlement(&route.from).unwrap();
+            let to = world.settlement(&route.to).unwrap();
+            // Scout both endpoints, then start from `from`.
+            game.player.teleport(to.x, to.y);
+            game.player.teleport(from.x, from.y);
+
+            let events = game.apply_travel(&route.id, &world);
+            assert!(
+                events.iter().any(|e| e.starts_with("Caravan to")),
+                "route {} announces departure",
+                route.id
+            );
+            assert_eq!(
+                game.player.pos(),
+                (to.x, to.y),
+                "route {} preview == executed (arrives exactly at destination)",
+                route.id
+            );
+            for &(x, y) in &route.tiles {
+                assert!(
+                    game.player.has_visited(x, y),
+                    "route {} walked its committed path (corridor visited)",
+                    route.id
+                );
+            }
+            // Hours derive from committed km (preview cost == executed cost).
+            let speed = 2.0 * KM_PER_CELL;
+            let expected = ((route.path_km / speed).ceil() as u64)
+                .max((route.tiles.len() as u64).div_ceil(2))
+                .max(1);
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.contains(&format!("{expected} hours"))),
+                "route {} reports {expected} hours: {events:?}",
+                route.id
+            );
+        }
     }
-    path
+
+    /// An unresolvable route id fails closed: no movement.
+    #[test]
+    fn travel_for_unknown_route_is_a_noop() {
+        let world = fixture_world();
+        let content = load_game_content(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/content"
+        )))
+        .expect("game content loads in tests");
+        let mut game = Game::new(0, content, &world);
+        let before = game.player.pos();
+        let events = game.apply_travel("no_such_route", &world);
+        assert!(events.is_empty());
+        assert_eq!(game.player.pos(), before);
+    }
 }

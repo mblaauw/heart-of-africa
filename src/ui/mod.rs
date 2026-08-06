@@ -26,6 +26,7 @@ pub fn game_ui(
     conversation_panel(ctx, game, llm_line, llm_waiting, &mut inputs);
     pack_panel(ctx, game, &mut inputs);
     diary_panel(ctx, game);
+    dev_panel(ctx, game, world);
     inputs
 }
 
@@ -304,4 +305,39 @@ fn bar(ui: &mut egui::Ui, label: &str, value: f32) {
             .fill(color)
             .text(format!("{label}: {value:.0}")),
     );
+}
+
+/// Development panel (F3 toggle): live read-only debug inspect.
+/// Emits no `Input`s — presentation-only, hash-neutral.
+pub fn dev_panel(ctx: &Context, game: &Game, world: &World) {
+    egui::Window::new("Dev")
+        .default_pos([8.0, 620.0])
+        .resizable(true)
+        .show(ctx, |ui| {
+            ui.label(format!("seed: {}", game.seed));
+            ui.label(format!("tick: {:?}", game.tick));
+            let (px, py) = game.player.pos();
+            let biome = world.grid.biome_at(px, py);
+            ui.label(format!(
+                "player: ({}, {}) biome: {:?}",
+                px,
+                py,
+                biome.map(|b| b.id.as_str())
+            ));
+            if let Some(settlement) = game.settlement_at(world) {
+                ui.label(format!("settlement: {}", settlement.name));
+            }
+            let weather = crate::sim::events::weather(game.seed, game.tick.day());
+            ui.label(format!("weather: {}", weather.label()));
+            ui.label(format!("money: {} piastres", game.player.money()));
+            ui.label(format!("hydration: {:.0}", game.survival.hydration));
+            ui.label(format!("nutrition: {:.0}", game.survival.nutrition));
+            ui.label(format!("rest: {:.0}", game.survival.rest));
+            ui.label(format!("clues: {}", game.clues.len()));
+            ui.label(format!("reputation entries: {}", game.reputation.len()));
+            ui.label(format!(
+                "save hash: {:016x}",
+                game.snapshot(vec![]).state_hash()
+            ));
+        });
 }

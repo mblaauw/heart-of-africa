@@ -1,10 +1,13 @@
-//! World data: biome grid, pathfinding (DESIGN.md §8.2, §8.3).
+//! World data: biome grid, pathfinding, geometry (DESIGN.md §3, §8.2, §8.3).
 //!
 //! Invariant: this module must never import `macroquad` or `egui`.
 
 pub mod biome;
 pub mod coords;
+pub mod geo;
 pub mod pathfind;
+
+pub use coords::KM_PER_CELL;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +21,7 @@ pub struct Settlement {
     pub y: u32,
 }
 
-/// A named river: a polyline of tile coordinates.
+/// A named river: a polyline of tile coordinates plus committed km geometry.
 ///
 /// Rivers are metadata for travel/economy in later phases; the navigable
 /// water itself is the biome grid. Content lint requires every river point
@@ -28,6 +31,14 @@ pub struct River {
     pub id: String,
     pub name: String,
     pub points: Vec<(u32, u32)>,
+    /// Committed polyline length in kilometres (precomputed at import time).
+    pub length_km: f64,
+    /// Width class authored in Tiled (`narrow`, `normal`, `wide`).
+    pub width_class: String,
+    /// Whether the river is navigable by vessel.
+    pub navigable: bool,
+    /// Seasonal rules: `None` = always; `Some("dry")` = impassable in dry season.
+    pub seasonal: Option<String>,
 }
 
 /// A caravan route between two settlements (DESIGN.md §4.2): fast travel
@@ -39,10 +50,36 @@ pub struct Route {
     pub from: String,
     pub to: String,
     pub risky: bool,
+    /// Committed polyline length in kilometres (precomputed at import time).
+    pub path_km: f64,
+    /// Dense sim-tile path along the authored polyline (for hour-by-hour
+    /// sim: visited marking, weather, encounter position).
+    pub tiles: Vec<(u32, u32)>,
+    /// Travel modes permitted on this route (e.g. `caravan`, `foot`).
+    pub modes: Vec<String>,
+    /// Whether the route is seasonal (impassable in some seasons).
+    pub seasonal: bool,
+    /// Whether the route is blocked (e.g. collapsed bridge) — impassable.
+    pub blocked: bool,
+}
+
+/// A named region polygon (floodplain, danger zone, region boundary).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    pub id: String,
+    pub polygon: geo::KmPolygon,
+}
+
+/// A named landmark point (used by clue SpatialHints in WS2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Landmark {
+    pub id: String,
+    pub kind: String,
+    pub point: geo::KmPoint,
 }
 
 /// The loaded macro-geography of one region (DESIGN.md §3.1): the biome grid
-/// plus named settlements, rivers, and caravan routes.
+/// plus named settlements, rivers, routes, regions, and landmarks.
 #[derive(Debug, Clone)]
 pub struct World {
     pub width: u32,
@@ -51,6 +88,8 @@ pub struct World {
     pub settlements: Vec<Settlement>,
     pub rivers: Vec<River>,
     pub routes: Vec<Route>,
+    pub regions: Vec<Region>,
+    pub landmarks: Vec<Landmark>,
     /// ID of the settlement where the expedition begins.
     pub start_settlement: String,
 }

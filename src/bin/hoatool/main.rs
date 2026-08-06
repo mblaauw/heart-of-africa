@@ -7,8 +7,19 @@
 //! - `gen-art <world.toml> <assets-dir> [seed]` — generate the procedural
 //!   style-bible tileset, marker art, and ambient audio (deterministic).
 //! - `validate <content-dir>` — run content lint (same checks as `cargo test`).
+//! - `map import <world.toml> <tiled-project.tsx> <out-dir>` — parse a Tiled
+//!   JSON export and produce geography.toml + manifest.toml.
+//! - `map gen <world.toml> <out-dir>` — generate a Tiled project template.
+//! - `map validate <content-dir>` — validate geography.toml against the biome grid.
+//! - `map preview <content-dir> [out.png]` — render a geography preview PNG.
+//! - `new-npc <content-dir> <id> <name> <settlement> [--gift coffee|beads]`
+//! - `llm-demo` (needs --features llm; live garnish check)
 
 mod art;
+mod map_gen;
+mod map_import;
+mod map_preview;
+mod map_validate;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -22,6 +33,10 @@ usage:
   hoatool gen-map <world.toml> <ascii-spec.txt> <out.png>
   hoatool gen-art <world.toml> <assets-dir> [seed]
   hoatool validate <content-dir> [assets-dir]
+  hoatool map import <world.toml> <tiled-project.tsx> <out-dir>
+  hoatool map gen <world.toml> <out-dir>
+  hoatool map validate <content-dir>
+  hoatool map preview <content-dir> [out.png]
   hoatool new-npc <content-dir> <id> <name> <settlement> [--gift coffee|beads]
   hoatool llm-demo        (needs --features llm; live garnish check)
 ";
@@ -32,6 +47,7 @@ fn main() {
         Some("gen-map") => run_gen_map(&args[2..]),
         Some("gen-art") => run_gen_art(&args[2..]),
         Some("validate") => run_validate(&args[2..]),
+        Some("map") => run_map(&args[2..]),
         Some("new-npc") => run_new_npc(&args[2..]),
         #[cfg(feature = "llm")]
         Some("llm-demo") => run_llm_demo(),
@@ -314,6 +330,40 @@ fn run_validate(args: &[String]) {
     if failed {
         eprintln!("validate: FAILED");
         std::process::exit(1);
+    }
+}
+
+/// Dispatch `hoatool map <subcommand>`.
+fn run_map(args: &[String]) {
+    match args.first().map(String::as_str) {
+        Some("import") => {
+            if let Err(e) = map_import::run_map_import(&args[1..]) {
+                eprintln!("hoatool map import: error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Some("gen") => {
+            if let Err(e) = map_gen::run_map_gen(&args[1..]) {
+                eprintln!("hoatool map gen: error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Some("validate") => {
+            if let Err(e) = map_validate::run_map_validate(&args[1..]) {
+                eprintln!("hoatool map validate: error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Some("preview") => {
+            if let Err(e) = map_preview::run_map_preview(&args[1..]) {
+                eprintln!("hoatool map preview: error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        _ => {
+            eprintln!("{USAGE}");
+            std::process::exit(2);
+        }
     }
 }
 

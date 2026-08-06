@@ -41,6 +41,12 @@ pub const CONTENT_VERSION: u32 = 1;
 /// Current world data format version; `world.toml` must declare it.
 pub const WORLD_VERSION: u32 = 1;
 
+/// File name for the committed geography output (Tiled import result).
+pub const GEOGRAPHY_FILE: &str = "geography.toml";
+
+/// Current geography format version; `geography.toml` must declare it.
+pub const GEOGRAPHY_VERSION: u32 = 1;
+
 #[derive(serde::Deserialize)]
 struct WorldToml {
     version: u32,
@@ -56,12 +62,18 @@ struct WorldToml {
 }
 
 #[derive(serde::Deserialize)]
-struct RouteToml {
-    id: String,
-    from: String,
-    to: String,
+struct GeographyToml {
+    version: u32,
     #[serde(default)]
-    risky: bool,
+    settlements: Vec<SettlementToml>,
+    #[serde(default)]
+    rivers: Vec<RiverToml>,
+    #[serde(default)]
+    routes: Vec<RouteToml>,
+    #[serde(default)]
+    regions: Vec<GeographyRegionToml>,
+    #[serde(default)]
+    landmarks: Vec<GeographyLandmarkToml>,
 }
 
 #[derive(serde::Deserialize)]
@@ -102,11 +114,58 @@ struct RiverToml {
     id: String,
     name: String,
     points: Vec<(u32, u32)>,
+    #[serde(default)]
+    length_km: f64,
+    #[serde(default = "default_width_class")]
+    width_class: String,
+    #[serde(default)]
+    navigable: bool,
+    seasonal: Option<String>,
+}
+
+fn default_width_class() -> String {
+    "normal".to_string()
+}
+
+#[derive(serde::Deserialize)]
+struct RouteToml {
+    id: String,
+    from: String,
+    to: String,
+    #[serde(default)]
+    risky: bool,
+    #[serde(default)]
+    path_km: f64,
+    #[serde(default)]
+    tiles: Vec<(u32, u32)>,
+    #[serde(default)]
+    modes: Vec<String>,
+    #[serde(default)]
+    seasonal: bool,
+    #[serde(default)]
+    blocked: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct GeographyRegionToml {
+    id: String,
+    polygon: Vec<(f64, f64)>,
+}
+
+#[derive(serde::Deserialize)]
+struct GeographyLandmarkToml {
+    id: String,
+    kind: String,
+    point: (f64, f64),
 }
 
 /// Load and parse the full world (world.toml + biome PNG) under
 /// `content_dir`. Schema errors and unresolvable references fail loudly —
 /// content lint is `cargo test` failing on a typo (§9).
+///
+/// Geography (settlements, rivers, routes) is read from the committed
+/// `geography.toml` if present (Tiled import output); otherwise falls
+/// back to the geography sections of `world.toml` (legacy path).
 pub fn load_world(content_dir: &Path) -> Result<World> {
     let toml_text = std::fs::read_to_string(content_dir.join(WORLD_FILE))
         .with_context(|| format!("reading {}", content_dir.join(WORLD_FILE).display()))?;
@@ -157,38 +216,166 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         &biome_defs,
     )?;
 
-    let settlements: Vec<Settlement> = raw
-        .settlements
-        .iter()
-        .map(|s| Settlement {
-            id: s.id.clone(),
-            name: s.name.clone(),
-            polity: s.polity.clone(),
-            x: s.x,
-            y: s.y,
-        })
-        .collect();
-
-    let rivers: Vec<River> = raw
-        .rivers
-        .iter()
-        .map(|r| River {
-            id: r.id.clone(),
-            name: r.name.clone(),
-            points: r.points.clone(),
-        })
-        .collect();
-
-    let routes: Vec<Route> = raw
-        .routes
-        .iter()
-        .map(|r| Route {
-            id: r.id.clone(),
-            from: r.from.clone(),
-            to: r.to.clone(),
-            risky: r.risky,
-        })
-        .collect();
+    // Geography: prefer the committed import output (geography.toml) over
+    // the legacy world.toml sections. This keeps the authored Tiled layers
+    // as the single source of truth for positions and geometry.
+    let geo_path = content_dir.join(GEOGRAPHY_FILE);
+    let (settlements, rivers, routes, regions, landmarks) = if geo_path.exists() {
+        let geo_text = std::fs::read_to_string(&geo_path)
+            .with_context(|| format!("reading {}", geo_path.display()))?;
+        let geo_raw: GeographyToml =
+            toml::from_str(&geo_text).with_context(|| format!("parsing {}", GEOGRAPHY_FILE))?;
+        if geo_raw.version != GEOGRAPHY_VERSION {
+            anyhow::bail!(
+                "{} declares version {}, expected {}",
+                GEOGRAPHY_FILE,
+                geo_raw.version,
+                GEOGRAPHY_VERSION
+            );
+        }
+        let settlements: Vec<Settlement> = geo_raw
+            .settlements
+            .iter()
+            .map(|s| Settlement {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                polity: s.polity.clone(),
+                x: s.x,
+                y: s.y,
+            })
+            .collect();
+        let rivers: Vec<River> = geo_raw
+            .rivers
+            .iter()
+            .map(|r| River {
+                id: r.id.clone(),
+                name: r.name.clone(),
+                points: r.points.clone(),
+                length_km: r.length_km,
+                width_class: r.width_class.clone(),
+                navigable: r.navigable,
+                seasonal: r.seasonal.clone(),
+            })
+            .collect();
+        let routes: Vec<Route> = geo_raw
+            .routes
+            .iter()
+            .map(|r| Route {
+                id: r.id.clone(),
+                from: r.from.clone(),
+                to: r.to.clone(),
+                risky: r.risky,
+                path_km: r.path_km,
+                tiles: r.tiles.clone(),
+                modes: r.modes.clone(),
+                seasonal: r.seasonal,
+                blocked: r.blocked,
+            })
+            .collect();
+        let regions: Vec<crate::world::Region> = geo_raw
+            .regions
+            .iter()
+            .map(|r| crate::world::Region {
+                id: r.id.clone(),
+                polygon: crate::world::geo::KmPolygon {
+                    id: r.id.clone(),
+                    ring: r
+                        .polygon
+                        .iter()
+                        .map(|&(x, y)| crate::world::geo::KmPoint::new(x, y))
+                        .collect(),
+                },
+            })
+            .collect();
+        let landmarks: Vec<crate::world::Landmark> = geo_raw
+            .landmarks
+            .iter()
+            .map(|l| crate::world::Landmark {
+                id: l.id.clone(),
+                kind: l.kind.clone(),
+                point: crate::world::geo::KmPoint::new(l.point.0, l.point.1),
+            })
+            .collect();
+        (settlements, rivers, routes, regions, landmarks)
+    } else {
+        // Legacy path: geography lives in world.toml.
+        let settlements: Vec<Settlement> = raw
+            .settlements
+            .iter()
+            .map(|s| Settlement {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                polity: s.polity.clone(),
+                x: s.x,
+                y: s.y,
+            })
+            .collect();
+        let rivers: Vec<River> = raw
+            .rivers
+            .iter()
+            .map(|r| River {
+                id: r.id.clone(),
+                name: r.name.clone(),
+                points: r.points.clone(),
+                length_km: 0.0,
+                width_class: "normal".into(),
+                navigable: true,
+                seasonal: None,
+            })
+            .collect();
+        let routes: Vec<Route> = raw
+            .routes
+            .iter()
+            .map(|r| {
+                // Legacy content has no committed route geometry: fill it
+                // with a deterministic walk between the endpoints so fast
+                // travel and the map overlay agree (preview == executed).
+                // Prefer the game's own A* (passable tiles, so content
+                // validation stays clean); straight-line as a last resort.
+                let from_tile = raw
+                    .settlements
+                    .iter()
+                    .find(|s| s.id == r.from)
+                    .map(|s| (s.x, s.y));
+                let to_tile = raw
+                    .settlements
+                    .iter()
+                    .find(|s| s.id == r.to)
+                    .map(|s| (s.x, s.y));
+                let (tiles, path_km) = match (from_tile, to_tile) {
+                    (Some(a), Some(b)) => {
+                        let tiles = crate::world::pathfind::find_path(&grid, a, b)
+                            .unwrap_or_else(|| crate::world::geo::straight_tiles(a, b));
+                        let path_km = crate::world::geo::tile_distance_km(
+                            a,
+                            b,
+                            crate::world::coords::KM_PER_CELL,
+                        );
+                        (tiles, path_km)
+                    }
+                    _ => (Vec::new(), 0.0),
+                };
+                Route {
+                    id: r.id.clone(),
+                    from: r.from.clone(),
+                    to: r.to.clone(),
+                    risky: r.risky,
+                    path_km,
+                    tiles,
+                    modes: vec!["caravan".into()],
+                    seasonal: false,
+                    blocked: false,
+                }
+            })
+            .collect();
+        (
+            settlements,
+            rivers,
+            routes,
+            Vec::<crate::world::Region>::new(),
+            Vec::<crate::world::Landmark>::new(),
+        )
+    };
 
     Ok(World {
         width: img.width(),
@@ -197,6 +384,8 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
         settlements,
         rivers,
         routes,
+        regions,
+        landmarks,
         start_settlement: raw.region.start_settlement,
     })
 }
