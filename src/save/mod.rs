@@ -60,6 +60,8 @@ pub struct Save {
     pub known_labels: BTreeSet<String>,
     /// Regional gift preference knowledge (WS2 social preferences).
     pub preferences: BTreeMap<String, GiftPrefState>,
+    /// Clue IDs pinned to the map (WS5).
+    pub pinned_clues: BTreeSet<String>,
     /// Discovered treasure site IDs (WS3).
     pub treasures_found: BTreeSet<String>,
     /// Whether the player is currently travelling by river (WS4).
@@ -140,6 +142,7 @@ mod tests {
             explored_sectors: BTreeSet::new(),
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
+            pinned_clues: BTreeSet::new(),
             treasures_found: BTreeSet::new(),
             embarked: false,
             embarked_river: None,

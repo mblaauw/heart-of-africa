@@ -98,6 +98,8 @@ pub struct Game {
     pub reputation: BTreeMap<String, i32>,
     /// Obtained clue IDs.
     pub clues: BTreeSet<String>,
+    /// Clue IDs the player has pinned to the map (WS5).
+    pub pinned_clues: BTreeSet<String>,
     /// Herrings proven false (DESIGN.md §4.5).
     pub false_clues: BTreeSet<String>,
     /// Exclusive clues taken by rivals.
@@ -151,6 +153,7 @@ impl Game {
             survival: Survival::new(),
             reputation: BTreeMap::new(),
             clues: BTreeSet::new(),
+            pinned_clues: BTreeSet::new(),
             false_clues: BTreeSet::new(),
             rivals_consumed: BTreeSet::new(),
             diary: Vec::new(),
@@ -182,6 +185,7 @@ impl Game {
             survival: save.survival,
             reputation: save.reputation,
             clues: save.clues,
+            pinned_clues: save.pinned_clues.clone(),
             false_clues: save.false_clues,
             rivals_consumed: save.rivals_consumed,
             diary: save.diary,
@@ -224,7 +228,12 @@ impl Game {
             Input::Retrieve(id) => self.apply_retrieve(id),
             Input::Travel(route_id) => self.apply_travel(route_id, world),
             Input::LlmAction { npc_id, effect } => self.apply_llm_action(npc_id, effect),
-            Input::SearchArea => Vec::new(),
+            Input::SearchArea => {
+                vec![
+                    "You survey the area but need a more specific clue to narrow the search."
+                        .to_string(),
+                ]
+            }
             Input::Excavate => self.apply_excavate(world),
             Input::Equip(slot, item) => {
                 if self.player.equipment.equip(*slot, item) {
@@ -243,7 +252,18 @@ impl Game {
             }
             Input::Embark => self.apply_embark(world),
             Input::Disembark => self.apply_disembark(),
-            Input::PinClue(_) | Input::UnpinClue(_) => Vec::new(),
+            Input::PinClue(id) => {
+                if self.graph.clues.contains_key(id) {
+                    self.pinned_clues.insert(id.clone());
+                    vec!["Pinned clue to the map.".to_string()]
+                } else {
+                    Vec::new()
+                }
+            }
+            Input::UnpinClue(id) => {
+                self.pinned_clues.remove(id);
+                Vec::new()
+            }
         };
         // The daily director: rivals move and consume exclusives — exactly
         // once per crossed day (DESIGN.md §4.8). Weather and market drift
@@ -273,6 +293,7 @@ impl Game {
             survival: self.survival.clone(),
             reputation: self.reputation.clone(),
             clues: self.clues.clone(),
+            pinned_clues: self.pinned_clues.clone(),
             false_clues: self.false_clues.clone(),
             rivals_consumed: self.rivals_consumed.clone(),
             diary: self.diary.clone(),
@@ -328,13 +349,12 @@ impl Game {
         // data's costs are real: floodplain 2, mountain 3, open ground 1).
         // Equipment reduces cost: rope→mountain, machete→savanna (WS4).
         let (x, y) = self.player.pos();
-        let base = world.grid.movement_cost_at(x, y);
-        let tool = self.player.equipment.equipped(EquipmentSlot::Tool);
-        let cost = match tool {
-            Some("rope") if base == 3.0 => 2.0,
-            Some("machete") if base == 2.0 => 1.0,
-            _ => base,
-        } as u64;
+        let base = world.grid.movement_cost_at(x, y) as f64;
+        let factor = self
+            .player
+            .equipment
+            .movement_cost_factor(world.grid.biome_id_at(x, y));
+        let cost = (base * factor).max(1.0) as u64;
         for _ in 0..cost {
             self.advance_travel(world);
         }
@@ -824,6 +844,13 @@ impl Game {
                 .unwrap_or_else(|| pos.to_string());
             if rivals::arrives_today(day) {
                 events.push(format!("Rumor: {name} was seen in {display}."));
+                // WS5: rivals may purchase equipment at outfitter settlements.
+                let equipment = rivals::equipment_for(self.seed, i);
+                if !equipment.is_empty() {
+                    events.push(format!(
+                        "Rumor: {name} was seen buying supplies in {display}.",
+                    ));
+                }
                 // Rival consumption: an exclusive clue here, if taking it
                 // keeps at least one complete path open (the solvability
                 // proof, DESIGN.md §9). Consumption is gated behind a grace

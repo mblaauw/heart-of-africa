@@ -44,8 +44,6 @@ pub struct PlayerBot {
     disliked_gifts: BTreeSet<String>,
     /// Regional labels learned from glossary (WS2/WS5 tracking).
     labels_seen: usize,
-    /// Whether we've seen a shovel in a market (WS5).
-    shovel_known: bool,
 }
 
 /// The tomb search a player would run from the location clue's text:

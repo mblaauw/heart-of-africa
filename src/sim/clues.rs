@@ -10,8 +10,8 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use rand::seq::SliceRandom;
 use rand::RngExt;
+use rand::seq::SliceRandom;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::dialogue::npc::Npc;
 use crate::sim::economy::Goods;
 use crate::world::geo::tile_distance_km;
-use crate::world::{World, KM_PER_CELL};
+use crate::world::{KM_PER_CELL, World};
 
 /// Clue node kinds (DESIGN.md §4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
