@@ -58,4 +58,8 @@ pub enum Input {
     Equip(EquipmentSlot, String),
     /// Unequip a slot (WS4).
     Unequip(EquipmentSlot),
+    /// Embark on a river at current position (WS4).
+    Embark,
+    /// Disembark from river travel (WS4).
+    Disembark,
 }

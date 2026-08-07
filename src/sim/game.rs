@@ -116,6 +116,10 @@ pub struct Game {
     pub preferences: BTreeMap<String, GiftPrefState>,
     /// Discovered treasure site IDs (WS3).
     pub treasures_found: BTreeSet<String>,
+    /// Whether the player is currently travelling by river (WS4).
+    pub embarked: bool,
+    /// Which river the player is on, if embarked.
+    pub embarked_river: Option<String>,
     /// Active conversation, if any.
     pub conversation: Option<Conversation>,
     /// The generated mystery of this run.
@@ -154,6 +158,8 @@ impl Game {
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
             treasures_found: BTreeSet::new(),
+            embarked: false,
+            embarked_river: None,
             conversation: None,
             graph,
             content,
@@ -183,6 +189,8 @@ impl Game {
             known_labels: save.known_labels,
             preferences: save.preferences.clone(),
             treasures_found: save.treasures_found.clone(),
+            embarked: save.embarked,
+            embarked_river: save.embarked_river.clone(),
             conversation: None,
             graph,
             content,
@@ -230,6 +238,8 @@ impl Game {
                     vec!["Nothing to unequip.".to_string()]
                 }
             }
+            Input::Embark => self.apply_embark(world),
+            Input::Disembark => self.apply_disembark(),
         };
         // The daily director: rivals move and consume exclusives — exactly
         // once per crossed day (DESIGN.md §4.8). Weather and market drift
@@ -267,6 +277,8 @@ impl Game {
             known_labels: self.known_labels.clone(),
             preferences: self.preferences.clone(),
             treasures_found: self.treasures_found.clone(),
+            embarked: self.embarked,
+            embarked_river: self.embarked_river.clone(),
             start_year: self.start_year,
             mandate_years: self.mandate_years,
             status: self.status.clone(),
@@ -301,6 +313,9 @@ impl Game {
     }
 
     fn apply_move(&mut self, dir: Direction, world: &World) -> Vec<String> {
+        if self.embarked {
+            return self.apply_river_move(dir, world);
+        }
         if self.player.try_move(&world.grid, dir).is_none() {
             return Vec::new();
         }
@@ -318,6 +333,83 @@ impl Game {
         for _ in 0..cost {
             self.advance_travel(world);
         }
+        self.after_movement(world);
+        Vec::new()
+    }
+
+    fn apply_embark(&mut self, world: &World) -> Vec<String> {
+        if self.embarked {
+            return vec!["Already on a river.".to_string()];
+        }
+        let (x, y) = self.player.pos();
+        let has_vessel = self
+            .player
+            .equipment
+            .equipped(EquipmentSlot::Vessel)
+            .is_some();
+        for river in &world.rivers {
+            if river.points.contains(&(x, y)) && river.navigable {
+                if river.width_class == "wide" && !has_vessel {
+                    return vec!["This river is too wide to cross without a vessel.".to_string()];
+                }
+                self.embarked = true;
+                self.embarked_river = Some(river.id.clone());
+                return vec![format!("You embark on the {}.", river.name)];
+            }
+        }
+        vec!["No navigable river here.".to_string()]
+    }
+
+    fn apply_disembark(&mut self) -> Vec<String> {
+        if !self.embarked {
+            return vec!["Not on a river.".to_string()];
+        }
+        self.embarked = false;
+        self.embarked_river = None;
+        vec!["You step off the river onto dry ground.".to_string()]
+    }
+
+    fn apply_river_move(&mut self, dir: Direction, world: &World) -> Vec<String> {
+        let Some(ref river_id) = self.embarked_river else {
+            return Vec::new();
+        };
+        let Some(river) = world.rivers.iter().find(|r| &r.id == river_id) else {
+            self.embarked = false;
+            self.embarked_river = None;
+            return vec![
+                "The river seems to have vanished — you stumble onto dry ground.".to_string(),
+            ];
+        };
+        let (x, y) = self.player.pos();
+        let Some(idx) = river.points.iter().position(|&p| p == (x, y)) else {
+            self.embarked = false;
+            self.embarked_river = None;
+            return vec!["You have drifted from the river.".to_string()];
+        };
+        let next_idx = match dir {
+            Direction::North | Direction::West => {
+                if idx > 0 {
+                    idx - 1
+                } else {
+                    idx
+                }
+            }
+            _ => {
+                if idx + 1 < river.points.len() {
+                    idx + 1
+                } else {
+                    idx
+                }
+            }
+        };
+        if next_idx == idx {
+            return vec![
+                "The river ends here — you cannot go farther in that direction.".to_string(),
+            ];
+        }
+        let (nx, ny) = river.points[next_idx];
+        self.player.teleport(nx, ny);
+        self.advance_travel(world);
         self.after_movement(world);
         Vec::new()
     }

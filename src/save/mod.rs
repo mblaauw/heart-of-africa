@@ -62,6 +62,12 @@ pub struct Save {
     pub preferences: BTreeMap<String, GiftPrefState>,
     /// Discovered treasure site IDs (WS3).
     pub treasures_found: BTreeSet<String>,
+    /// Whether the player is currently travelling by river (WS4).
+    #[serde(default)]
+    pub embarked: bool,
+    /// Which river the player is on, if embarked (WS4).
+    #[serde(default)]
+    pub embarked_river: Option<String>,
     /// Expedition start year (WS3 mandate deadline).
     pub start_year: u16,
     /// Mandate duration in years (WS3).
@@ -135,6 +141,8 @@ mod tests {
             known_labels: BTreeSet::new(),
             preferences: BTreeMap::new(),
             treasures_found: BTreeSet::new(),
+            embarked: false,
+            embarked_river: None,
             start_year: 1890,
             mandate_years: 5,
             status: GameStatus::Playing,
