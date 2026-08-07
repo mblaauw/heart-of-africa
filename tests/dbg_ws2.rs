@@ -137,6 +137,7 @@ fn dbg_seed() {
             Input::Rest => rest_count += 1,
             Input::Use(_) => use_count += 1,
             Input::Talk(_, _) => talked += 1,
+            Input::PinClue(_) | Input::UnpinClue(_) => {}
             _ => {}
         }
         if hint_at.is_some() && log.len() % 60 == 0 {

@@ -62,6 +62,31 @@ fn validate_world(world: &crate::world::World) -> Vec<String> {
         ));
     }
 
+    // WS5: validate that every Place has a valid kind.
+    let valid_place_kinds: HashSet<&str> = [
+        "market",
+        "food",
+        "outfitter",
+        "authority",
+        "lodging",
+        "guide",
+        "telegraph",
+        "docks",
+    ]
+    .iter()
+    .copied()
+    .collect();
+    for s in &world.settlements {
+        for p in &s.places {
+            if !valid_place_kinds.contains(p.kind.as_str()) {
+                problems.push(format!(
+                    "settlement {:?} place {:?} has invalid kind {:?}",
+                    s.id, p.id, p.kind
+                ));
+            }
+        }
+    }
+
     let mut river_ids: HashSet<&str> = HashSet::new();
     for r in &world.rivers {
         if !river_ids.insert(r.id.as_str()) {

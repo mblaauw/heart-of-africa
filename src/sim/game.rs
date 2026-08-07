@@ -50,6 +50,9 @@ impl GameContent {
 pub struct DiaryEntry {
     pub tick: Tick,
     pub text: String,
+    /// Diary section (WS5). Empty = legacy.
+    #[serde(default)]
+    pub section: String,
 }
 
 /// Run outcome. `Dead` carries the in-fiction reason.
@@ -240,6 +243,7 @@ impl Game {
             }
             Input::Embark => self.apply_embark(world),
             Input::Disembark => self.apply_disembark(),
+            Input::PinClue(_) | Input::UnpinClue(_) => Vec::new(),
         };
         // The daily director: rivals move and consume exclusives — exactly
         // once per crossed day (DESIGN.md §4.8). Weather and market drift
@@ -253,6 +257,7 @@ impl Game {
             self.diary.push(DiaryEntry {
                 tick: self.tick,
                 text: text.clone(),
+                section: event_section(text),
             });
         }
         events
@@ -461,6 +466,7 @@ impl Game {
                 self.diary.push(DiaryEntry {
                     tick: self.tick,
                     text: text.clone(),
+                    section: "Glossary".to_string(),
                 });
             }
         }
@@ -479,6 +485,7 @@ impl Game {
                     tick: self.tick,
                     text: "The cleft in the red rock opens before you — the hills split apart, and the way down is clear."
                         .to_string(),
+                    section: "Clues".to_string(),
                 });
             }
             self.check_win();
@@ -892,6 +899,7 @@ impl Game {
         self.diary.push(DiaryEntry {
             tick: self.tick,
             text: format!("The expedition {reason}."),
+            section: "Journal".to_string(),
         });
     }
 
@@ -910,6 +918,7 @@ impl Game {
                 tick: self.tick,
                 text: "The cleft in the red rock opens before you — the tomb of Ahnk-Ahnk. You have found it."
                     .to_string(),
+                section: "Journal".to_string(),
             });
         }
     }
@@ -930,6 +939,21 @@ impl crate::dialogue::DialogueView for Game {
 /// The exclusive (leg) clue ids the rivals may consume.
 fn is_exclusive(id: &str) -> bool {
     matches!(id, "e1" | "e2" | "f1" | "f2")
+}
+
+/// Map a diary event text to its section (WS5).
+fn event_section(text: &str) -> String {
+    if text.starts_with("Clue recorded") || text.contains("proved false") {
+        "Clues".to_string()
+    } else if text.starts_with("Your standing") {
+        "People".to_string()
+    } else if text.contains("excavate and find") {
+        "Treasures".to_string()
+    } else if text.starts_with("You embark") || text.starts_with("You step off") {
+        "Routes".to_string()
+    } else {
+        "Journal".to_string()
+    }
 }
 
 /// Generate the mystery for a seed; panics only on generator/content bugs

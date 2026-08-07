@@ -62,4 +62,8 @@ pub enum Input {
     Embark,
     /// Disembark from river travel (WS4).
     Disembark,
+    /// Pin a clue text to the map (WS5).
+    PinClue(String),
+    /// Remove a pin from the map (WS5).
+    UnpinClue(String),
 }

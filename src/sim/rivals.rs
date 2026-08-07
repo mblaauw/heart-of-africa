@@ -44,3 +44,21 @@ pub fn pursues_treasure(seed: u64, rival_index: usize) -> bool {
         .wrapping_add(rival_index as u64 * 0x13);
     (hash % 100) < 60
 }
+
+/// Equipment the rival has purchased for their pursuits (WS5).
+pub fn equipment_for(seed: u64, rival_index: usize) -> Vec<String> {
+    let hash = seed
+        .wrapping_mul(0x7F3A_1B92)
+        .wrapping_add(rival_index as u64 * 0x2D);
+    let mut items = Vec::new();
+    if has_shovel(seed, rival_index) {
+        items.push("shovel".to_string());
+    }
+    if (hash >> 4).is_multiple_of(3) {
+        items.push("rope".to_string());
+    }
+    if (hash >> 8) % 3 == 1 {
+        items.push("machete".to_string());
+    }
+    items
+}
