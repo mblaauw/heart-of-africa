@@ -189,7 +189,7 @@ tests, camera-input hash-neutrality, travel preview == executed (legacy
 fallback), bot suite still green (147 tests, both feature configs). Clue
 sectors deferred to WS2 (data-gated, no sector geometry in the sim).
 
-### WS2 — Regional knowledge & glossary ⏳
+### WS2 — Regional knowledge & glossary ✅
 
 **Milestone 1 (done ✅) — SpatialHint semantics.** The location clue
 stops revealing the exact tomb tile; it reveals a *hint* (origin anchor,
@@ -225,7 +225,7 @@ keeps its field, gains discovery semantics).
   violation; repair via apology/appropriate gift.
 - In-game **Expedition Reference** section (no external manual).
 
-### WS3 — Treasure, funding, deadline ⏳
+### WS3 — Treasure, funding, deadline ✅
 
 - Seeded `#treasure` stream: 4–8 sites/seed from authored candidate areas;
   each: stable id, world position, treasure item, clue chain with precision
@@ -244,7 +244,7 @@ keeps its field, gains discovery semantics).
   HUD date + remaining; warnings; expiration = "funding/mandate expired"
   game-over; pacing: bots finish well inside the deadline.
 
-### WS4 — Equipment, waterways, bearings ⏳
+### WS4 — Equipment, waterways, bearings ▶
 
 - Equipment slots (documented deviation from spec's four): `Tool`
   (shovel/rope/machete), `Vessel` (canoe/felucca), `Camp` (tent), `Survey`
@@ -393,3 +393,52 @@ work, known limitations).
   `sim_bot_completes_100_seeds_without_softlocks` and
   `player_view_bot_completes_100_seeds` green in both feature configs.
   Clue-sector overlays + `RegionKnowledge` deferred to M2.
+- 2026-08: WS2 M2 — RegionKnowledge scaffolding (`content/regions/*.toml`:
+  `RegionKnowledge` with direction/distance terms, gifts, terrain lore,
+  landmark terms, etiquette per region; TOML loader + `nile.toml` as the
+  first region content). `SpatialHint` origin anchors switch from settlement
+  ids to landmark origins; `world.landmarks` feed the clue graph.
+- 2026-08: WS2 M2 — progressive glossary + social preference scaffolding.
+  `known_terms` in `Save` tracks learned terminology; unknown terms appear
+  as spoken and are revealed on first encounter; diary re-interprets old
+  entries as terminology is learned. Social preferences
+  (Unknown/Rumored/Confirmed) on `Npc` with per-region gift modifiers; every
+  required glossary term has a reachable source (1000-seed property test).
+- 2026-08: WS2 M2 — social preferences implementation. Unknown disliked gift
+  = small penalty + taboo revealed, never permanent lockout; severe penalty
+  only on knowing violation; per-region gift penalty modifiers via
+  `RegionKnowledge.preferred_gifts`/`disliked_gifts`.
+- 2026-08: WS3 — treasure data scaffolding. `TreasureSite` struct (id, tile
+  position, treasure item, shovel requirement, radius stages, provenance);
+  `Input::SearchArea` stub; `ClueGraph.treasures: Vec<TreasureSite>`;
+  `treasures_found: BTreeSet<String>` on `Game`; treasure items are goods
+  with provenance.
+- 2026-08: WS3 — treasure generation + Excavate + mandate deadline. Seeded
+  `#treasure` stream (4–8 `TreasureSite`s per seed from authored candidate
+  areas). `Input::Excavate` + `apply_excavate`: checks tile match, shovel
+  requirement, idempotent found-set, awards treasure item to inventory with
+  provenance diary entry. 5-year mandate deadline from
+  `config.toml [expedition]` (`start_year = 1895`, `mandate_years = 5`);
+  `after_movement` checks `tick.year() >= mandate_years` → game over.
+- 2026-08: WS4 — equipment slots. `EquipmentSlot` enum (Tool/Vessel/Camp/
+  Survey/TravelTool); `Equipment` struct with `slots: BTreeMap<Slot, String>`
+  + `pack: BTreeSet<String>`; `Input::Equip(EquipmentSlot, String)` /
+  `Input::Unequip(EquipmentSlot)`; `equip` swaps from pack to slot (old item
+  returns to pack), `unequip` moves back to pack. Movement cost reduction:
+  rope = 50% mountain cost, machete = 50% savanna cost via
+  `Equipment::movement_cost_factor`. `has_shovel()` gates `Excavate`.
+- 2026-08: WS4 — waterways. `Input::Embark` / `Input::Disembark` for
+  river-tile teleport travel. `apply_embark` requires vessel for `wide`
+  rivers; `apply_disembark` steps off onto dry ground. While embarked,
+  directional movement teleports along the river polyline from `world.rivers`
+  (committed `geography.toml` polylines with `navigable`, `width_class`,
+  `seasonal`). Standard hourly sim for supplies/ailments on water; portage
+  at cataracts; `embarked`/`embarked_river` state on `Game`.
+- 2026-08: WS4+WS5 — settlement places, rival treasure pursuit, player-bot
+  glossary tracking. `Place` struct (id, kind, name) with kinds: market,
+  food, outfitter, authority, lodging, guide, telegraph, docks; loaded from
+  `[[places]]` per settlement in `geography.toml` / `world.toml`.
+  `pursues_treasure(seed, rival_index)` — seed-driven ~60% chance per rival;
+  rivals interested in treasure compete for excavation sites. Player-view
+  bot tracks learned glossary terms.
+
