@@ -12,7 +12,7 @@ use crate::sim::economy::{Category, Goods, Market, MarketEntry};
 use crate::sim::game::GameContent;
 use crate::sim::survival::Ailment;
 use crate::world::biome::{BiomeDef, BiomeGrid, parse_hex_color};
-use crate::world::{RegionKnowledge, River, Route, Settlement, World};
+use crate::world::{Place, RegionKnowledge, River, Route, Settlement, World};
 
 /// Name of the world data file, at the content directory root.
 pub const WORLD_FILE: &str = "world.toml";
@@ -110,6 +110,15 @@ struct SettlementToml {
     polity: String,
     x: u32,
     y: u32,
+    #[serde(default)]
+    places: Vec<PlaceToml>,
+}
+
+#[derive(serde::Deserialize)]
+struct PlaceToml {
+    id: String,
+    kind: String,
+    name: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -247,6 +256,15 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
                 polity: s.polity.clone(),
                 x: s.x,
                 y: s.y,
+                places: s
+                    .places
+                    .iter()
+                    .map(|p| Place {
+                        id: p.id.clone(),
+                        kind: p.kind.clone(),
+                        name: p.name.clone(),
+                    })
+                    .collect(),
             })
             .collect();
         let rivers: Vec<River> = geo_raw
@@ -324,6 +342,15 @@ pub fn load_world(content_dir: &Path) -> Result<World> {
                 polity: s.polity.clone(),
                 x: s.x,
                 y: s.y,
+                places: s
+                    .places
+                    .iter()
+                    .map(|p| Place {
+                        id: p.id.clone(),
+                        kind: p.kind.clone(),
+                        name: p.name.clone(),
+                    })
+                    .collect(),
             })
             .collect();
         let rivers: Vec<River> = raw

@@ -28,3 +28,19 @@ pub fn position(day: u64, rival_index: usize, order: &[String]) -> &str {
 pub fn arrives_today(day: u64) -> bool {
     day > 0 && day.is_multiple_of(HOP_DAYS)
 }
+
+/// Whether this rival owns a shovel (seed-driven, ~30% chance).
+pub fn has_shovel(seed: u64, rival_index: usize) -> bool {
+    let hash = seed
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(rival_index as u64 * 0x27);
+    (hash % 100) < 30
+}
+
+/// Whether this rival is interested in treasure (seed-driven, ~60% chance).
+pub fn pursues_treasure(seed: u64, rival_index: usize) -> bool {
+    let hash = seed
+        .wrapping_mul(0x6C07_8965)
+        .wrapping_add(rival_index as u64 * 0x13);
+    (hash % 100) < 60
+}

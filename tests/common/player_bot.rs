@@ -42,6 +42,8 @@ pub struct PlayerBot {
     /// Gift items the player has learned are disliked in the current region
     /// (from diary entries like "must dislike beads").
     disliked_gifts: BTreeSet<String>,
+    /// Regional labels learned from glossary (WS2/WS5 tracking).
+    labels_seen: usize,
 }
 
 /// The tomb search a player would run from the location clue's text:
@@ -79,6 +81,13 @@ impl PlayerBot {
     }
 
     fn next_input(&mut self, game: &mut Game, world: &World) -> Option<Input> {
+        // WS5: track regional glossary growth (informational; bot doesn't
+        // actively use labels yet — they affect diary reinterpretation).
+        let labeled = game.known_labels.len();
+        if labeled > self.labels_seen {
+            self.labels_seen = labeled;
+        }
+
         // Keep body and soul together, exactly like a player watching the bars.
         if game.survival.hydration < 55.0 {
             return self.supply(game, world, "water");

@@ -13,6 +13,15 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// A facility at a settlement (WS4: market, food, outfitter, authority,
+/// lodging, guide, telegraph, docks).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Place {
+    pub id: String,
+    pub kind: String, // market, food, outfitter, authority, lodging, guide, telegraph, docks
+    pub name: String,
+}
+
 /// A named settlement: a tile position plus its 1890s polity (DESIGN.md §3.2).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settlement {
@@ -21,6 +30,9 @@ pub struct Settlement {
     pub polity: String,
     pub x: u32,
     pub y: u32,
+    /// Available facilities (WS4).
+    #[serde(default)]
+    pub places: Vec<Place>,
 }
 
 /// A named river: a polyline of tile coordinates plus committed km geometry.

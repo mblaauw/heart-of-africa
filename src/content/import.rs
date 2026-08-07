@@ -128,6 +128,7 @@ pub fn import_tiled(tsx_path: &Path, world: &World) -> Result<(GeographyToml, Ma
                         polity: polity.to_string(),
                         x: tx,
                         y: ty,
+                        places: Vec::new(),
                     });
                 }
                 "rivers" => {

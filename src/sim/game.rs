@@ -246,7 +246,7 @@ impl Game {
         // stay pure functions of (seed, day), read on demand.
         if self.status == GameStatus::Playing {
             for day in (day_before + 1)..=self.tick.day() {
-                events.extend(self.process_day(day));
+                events.extend(self.process_day(day, world));
             }
         }
         for text in &events {
@@ -797,7 +797,7 @@ impl Game {
     /// The daily director for one specific in-game day: rivals move and
     /// consume exclusives (DESIGN.md §4.8). Called exactly once per crossed
     /// day from `apply`.
-    fn process_day(&mut self, day: u64) -> Vec<String> {
+    fn process_day(&mut self, day: u64, world: &World) -> Vec<String> {
         let mut events = Vec::new();
         let order = &self.graph.settlement_order;
         let rivals_names: Vec<String> = self
@@ -854,6 +854,32 @@ impl Game {
                 }
             }
         }
+
+        // WS5: rivals may discover treasure sites on their circuit.
+        for (i, name) in rivals_names.iter().enumerate() {
+            if !rivals::pursues_treasure(self.seed, i) {
+                continue;
+            }
+            let pos = rivals::position(day, i, order);
+            let has_tool = rivals::has_shovel(self.seed, i);
+            let tile = world.settlement(pos).map(|s| (s.x, s.y)).unwrap_or((0, 0));
+            for site in &self.graph.treasures {
+                if site.tile == tile
+                    && (!site.requires_shovel || has_tool)
+                    && !self.treasures_found.contains(&site.id)
+                {
+                    self.treasures_found.insert(site.id.clone());
+                    let display = self
+                        .graph
+                        .settlement_display
+                        .get(pos)
+                        .cloned()
+                        .unwrap_or_else(|| pos.to_string());
+                    events.push(format!("Rumor: {name} has found a treasure at {display}!",));
+                }
+            }
+        }
+
         events
     }
 
