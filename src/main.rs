@@ -4,6 +4,7 @@
 //! the headless tests. Rendering, audio, and UI are skins over the sim.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use macroquad::prelude::*;
 
@@ -273,6 +274,11 @@ async fn main() {
         // UI buttons produce inputs too; all inputs are applied in order and
         // recorded in the replay log.
         egui_macroquad::ui(|ctx| {
+            // Apply desert theme on first frame (egui context is frame-local in macroquad).
+            static THEMED: AtomicBool = AtomicBool::new(false);
+            if !THEMED.swap(true, Ordering::Relaxed) {
+                heart_of_africa::ui::apply_desert_theme(ctx);
+            }
             inputs.extend(heart_of_africa::ui::game_ui(
                 ctx,
                 &mut game,

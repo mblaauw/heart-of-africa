@@ -9,6 +9,54 @@ use crate::sim::Input;
 use crate::sim::game::{Game, GameStatus};
 use crate::world::World;
 
+/// Apply the desert/parchment visual theme (inspired by the 1890s expedition
+/// design prototype: warm earth tones, gold accents, dark wood panels).
+pub fn apply_desert_theme(ctx: &egui::Context) {
+    use egui::{Color32, CornerRadius, Stroke};
+    let mut style = (*ctx.style()).clone();
+
+    // Dark wood backgrounds
+    style.visuals.window_fill = Color32::from_rgb(0x24, 0x1A, 0x10);
+    style.visuals.panel_fill = Color32::from_rgb(0x1C, 0x14, 0x0C);
+    style.visuals.faint_bg_color = Color32::from_rgb(0x1C, 0x14, 0x0C);
+    style.visuals.extreme_bg_color = Color32::from_rgb(0x16, 0x0F, 0x09);
+
+    // Gold/cream text on dark backgrounds
+    style.visuals.override_text_color = Some(Color32::from_rgb(0xF3, 0xE4, 0xBD));
+
+    // Widget backgrounds — parchment tone
+    style.visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(0x3A, 0x2C, 0x18);
+    style.visuals.widgets.noninteractive.fg_stroke =
+        Stroke::new(1.0, Color32::from_rgb(0xCB, 0xAA, 0x5C));
+    style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(0x5C, 0x43, 0x26);
+    style.visuals.widgets.inactive.fg_stroke =
+        Stroke::new(1.0, Color32::from_rgb(0xCB, 0xAA, 0x5C));
+    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(0x8A, 0x6A, 0x3A);
+    style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::from_rgb(0xF6, 0xE9, 0xC9));
+    style.visuals.widgets.active.bg_fill = Color32::from_rgb(0x9C, 0x45, 0x35); // warm red
+    style.visuals.widgets.active.fg_stroke = Stroke::new(1.0, Color32::from_rgb(0xF6, 0xE9, 0xC9));
+
+    // Selection color
+    style.visuals.selection.bg_fill = Color32::from_rgb(0x8A, 0x6A, 0x3A);
+    style.visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(0xE0, 0xC0, 0x7A));
+
+    // Rounded corners (matches prototype's border-radius:6px/8px patterns)
+    style.visuals.window_corner_radius = CornerRadius::same(6);
+    style.visuals.widgets.noninteractive.corner_radius = CornerRadius::same(4);
+    style.visuals.widgets.inactive.corner_radius = CornerRadius::same(4);
+    style.visuals.widgets.hovered.corner_radius = CornerRadius::same(4);
+    style.visuals.widgets.active.corner_radius = CornerRadius::same(4);
+
+    // Hyperlinks
+    style.visuals.hyperlink_color = Color32::from_rgb(0x8A, 0x32, 0x26);
+
+    // Warning/error colors
+    style.visuals.warn_fg_color = Color32::from_rgb(0xC8, 0xAA, 0x28);
+    style.visuals.error_fg_color = Color32::from_rgb(0xC8, 0x3C, 0x28);
+
+    ctx.set_style(style);
+}
+
 /// Draw the game UI and return the inputs the player chose this frame.
 /// `llm_line` is the garnish's rephrased line for the current conversation
 /// (None = the scripted line); `llm_waiting` shows the considering state.
